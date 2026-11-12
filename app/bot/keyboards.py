@@ -68,3 +68,12 @@ def keyboard(page: str, view: AccountView, settings: Settings) -> InlineKeyboard
         ]
     rows.append(home_button())
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+class CandidateData(CallbackData, prefix="candidate"):
+    candidate_id: int
+    approve: bool
+
+
+class CandidatesPageData(CallbackData, prefix="candidates"):
+    after: int

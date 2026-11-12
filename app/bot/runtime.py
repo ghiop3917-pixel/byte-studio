@@ -109,6 +109,9 @@ async def _run(settings: Settings, with_reader: bool) -> None:
             if with_reader:
                 services["reader"] = lambda: run_reader(database, settings, hub=hub)
                 services["ingestion"] = Ingestion(database, settings).processing_loop
+                from app.discovery import Growth
+
+                services["growth"] = Growth(database, settings, hub).loop
             await run_services(services, settings, asyncio.Event())
             raise RuntimeError(texts.INTERFACE_STOPPED)
         finally:

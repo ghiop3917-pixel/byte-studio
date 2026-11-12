@@ -255,3 +255,39 @@ class ReaderState(Base):
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     detail: Mapped[str] = mapped_column(Text, default="")
+
+
+class DiscoveryRun(Base):
+    __tablename__ = "lh_discovery_runs"
+    slug: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_index: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class JoinJob(Base):
+    __tablename__ = "lh_join_jobs"
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','processing','retry_wait','completed','failed','ambiguous')"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("lh_chat_candidates.id"), unique=True)
+    approved_by: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    token: Mapped[str | None] = mapped_column(String(32))
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class JoinAttempt(Base):
+    __tablename__ = "lh_join_attempts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("lh_join_jobs.id"), index=True)
+    token: Mapped[str] = mapped_column(String(32), unique=True)
+    started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    outcome: Mapped[str] = mapped_column(String(64), default="started")

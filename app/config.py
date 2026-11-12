@@ -115,6 +115,30 @@ class Settings(BaseSettings):
     min_active_messages: int = Field(default=10, ge=1)
     min_unique_authors: int = Field(default=5, ge=1)
 
+    discovery_queries: dict[str, tuple[str, ...]] = Field(
+        default_factory=lambda: {
+            "web_dev": ("заказы разработка", "фриланс сайты", "ищу программиста", "вакансии it"),
+            "web_design": ("заказы дизайн", "дизайн фриланс"),
+            "ai_orders": ("нейросети заказы", "автоматизация бизнес"),
+            "tech_specialists": ("вакансии разработчик", "it специалисты"),
+            "jobs": ("вакансии работа", "ищу сотрудника"),
+            "freelance_jobs": ("фриланс заказы", "удаленная работа"),
+            "seo": ("seo заказы", "продвижение сайтов"),
+        }
+    )
+    discovery_search_limit: int = Field(default=50, ge=1, le=50)
+    discovery_max_attempts: int = Field(default=3, ge=1, le=10)
+    growth_poll_seconds: float = Field(default=5, gt=0)
+    join_max_attempts: int = Field(default=3, ge=1, le=10)
+    join_lease_seconds: float = Field(default=300, gt=0)
+    dialog_scan_limit: int = Field(default=2000, ge=1)
+    candidate_page_size: int = Field(default=5, ge=1, le=5)
+    link_scan_batch: int = Field(default=100, ge=1, le=1000)
+    links_per_message: int = Field(default=20, ge=1, le=100)
+    source_review_days: int = Field(default=30, ge=1)
+    source_review_interval_days: int = Field(default=7, ge=1)
+    captcha_words: tuple[str, ...] = ("captcha", "капча", "verify", "подтвердите", "проверку")
+
     min_message_length: int = Field(default=30, ge=1)
     dedup_window_hours: int = Field(default=24, ge=1)
     delivery_messages_per_second: int = Field(default=20, ge=1, le=20)
@@ -126,6 +150,17 @@ class Settings(BaseSettings):
     lead_excerpt_length: int = Field(default=300, ge=1)
     summary_max_length: int = Field(default=120, ge=1)
     subscription_reminder_hours: int = Field(default=24, ge=1)
+
+    @field_validator("discovery_queries")
+    @classmethod
+    def validate_discovery_queries(cls, value: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+        known = {slug for slug, _ in INITIAL_CATEGORIES}
+        if any(
+            slug not in known or len(queries) > 20 or any(not q.strip() or len(q) > 100 for q in queries)
+            for slug, queries in value.items()
+        ):
+            raise ValueError("Поисковые запросы: известная категория, до 20 непустых запросов длиной до 100 символов.")
+        return {slug: tuple(dict.fromkeys(q.strip() for q in queries)) for slug, queries in value.items()}
 
     @field_validator("score_choices")
     @classmethod

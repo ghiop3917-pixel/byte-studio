@@ -10,8 +10,8 @@ from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from app.bot import texts
 from app.bot.accounts import AccountError, Accounts
-from app.bot.handlers import admin, menu, start
-from app.bot.keyboards import CategoryData, GeoData, PageData, ScoreData
+from app.bot.handlers import admin, discovery, menu, start
+from app.bot.keyboards import CandidateData, CandidatesPageData, CategoryData, GeoData, PageData, ScoreData
 from app.config import Settings
 from app.db.session import Database
 
@@ -57,5 +57,13 @@ def create_router(database: Database, settings: Settings) -> Router:
     router.message.register(admin.remove_chat, Command("remove_chat"))
     router.message.register(admin.chats, Command("chats"))
     router.message.register(admin.keywords, Command("keywords"))
+    router.message.register(discovery.discover, Command("discover"))
+    router.message.register(discovery.candidates, Command("candidates"))
+    router.message.register(discovery.verify, Command("candidate_check"))
+    router.message.register(discovery.resume, Command("join_resume"))
+    router.message.register(discovery.geo, Command("chat_geo"))
+    router.message.register(discovery.review, Command("source_review"))
+    router.callback_query.register(discovery.decision, CandidateData.filter())
+    router.callback_query.register(discovery.page, CandidatesPageData.filter())
     router.message.register(menu.save_geo, menu.GeoInput.value)
     return router

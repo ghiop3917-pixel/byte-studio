@@ -96,3 +96,39 @@ KEYWORD_MISSING = "Ключевое слово не найдено в этой �
 CATEGORY_UNKNOWN = "Неизвестная категория."
 EMPTY_LIST = "Список пуст."
 LIST_LIMIT = "\nПоказаны первые {limit} записей."
+
+
+DISCOVER_USAGE = "/discover <категория, например web_dev>"
+DISCOVER_QUEUED = (
+    "Поиск поставлен в очередь. Результаты — /candidates. Вступления без одобрения выключены по умолчанию."
+)
+CANDIDATE_MISSING = "Кандидат не найден."
+CANDIDATE_BUSY = "Подключение уже выполняется. Дождитесь результата; повторный запрос не создан."
+CANDIDATES_EMPTY = "Кандидатов пока нет. Используйте /discover или /add_chat."
+CANDIDATE_CARD = (
+    "<b>#{id} · {title}</b>\nКатегория: {category}\n"
+    "Участники: {participants} · сообщений/сутки в выборке: {msgs_per_day}"
+    "\nСтатус: {status}\nПричина: {error}"
+)
+CANDIDATE_DECIDED = "Решение сохранено: {status}. DRY_RUN блокирует реальные вступления."
+BTN_CONNECT = "Подключить"
+BTN_REJECT = "Отклонить"
+BTN_NEXT_CANDIDATES = "Следующие кандидаты"
+CANDIDATE_PAGE = "Кандидаты со следующего ID: {after}"
+CANDIDATES_USAGE = "/candidates [последний ID]"
+GROWTH_STATUS = (
+    "Очередь: DRY_RUN={dry_run}, AUTO_JOIN={auto_join}. Остановка: {stopped}. Попыток за сутки UTC: {attempts}."
+)
+JOIN_RESUMED = "Ручная остановка снята. Лимиты и проверка вместимости аккаунта остаются обязательными."
+GEO_USAGE = "/chat_geo <ID из /chats> <гео чата, указанное вручную>"
+GEO_SAVED = "Гео чата сохранено вручную. Это не местоположение заказчика."
+REVIEW_HEADER = "<b>Источники без новых лидов в lh_</b>\n{lines}"
+REVIEW_LIMITATION = (
+    "Нулевая выборка не доказывает плохое качество: классификатор ещё не активирован. Никто не отключён и не покинут."
+)
+REVIEW_LINE = "#{id} · {title}"
+UNKNOWN_VALUE = "неизвестно"
+
+CANDIDATE_CHECK_USAGE = "/candidate_check <ID кандидата>: проверяет доступ без повторного вступления"
+CANDIDATE_CHECK_WAIT = "Доступ пока не подтверждён или проверка недоступна. Новое вступление не отправлялось."
+CANDIDATE_CHECK_RESULT = "Статус проверки доступа: {status}. Запрос вступления не отправлялся."

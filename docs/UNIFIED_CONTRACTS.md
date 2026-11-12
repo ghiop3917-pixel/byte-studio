@@ -337,3 +337,38 @@ Callback-префиксы: page(name), category(category_id, enabled), score(val
 
 Все даты UTC. Данные и DDL рабочей monitor.sqlite3 не менялись.
 Предварительно подходящие сообщения ждут phase=classifier, без фиктивного score/summary.
+
+
+## Контракты Этапа 3б
+
+- app.discovery.writable_group(chat, *, supergroup=False) -> bool.
+- can_participate(permissions) -> bool: реальный ParticipantPermissions Telethon.
+- Growth(database: Database, settings: Settings, hub: ReaderHub).
+- request_discovery(tg_id, slug), schedule_discovery(), discover_one() -> bool.
+- save_candidate(chat, slug, participants, messages) -> int; collect_links() -> int.
+- decide(actor, candidate_id, approve) -> str; candidates(actor, after=0) -> tuple[dict,...].
+- recover_joins() -> int; claim_join() -> JoinClaim | None.
+- JoinClaim(id, candidate_id, token, attempts, chat_id, access_hash, username, invite_hash).
+- start_attempt(claim, account_chats) -> bool; resolve_claim(claim).
+- finish(claim, status, error=None, *, retry=False, ambiguous=False).
+- activate(claim, chat, *, actor=None); join_one() -> bool.
+- verify_candidate(actor, candidate_id) -> str — только проверка без Join/Import.
+- review_sources(), loop(). Один последовательный Growth.loop в текущем процессе.
+- CallbackData: CandidateData(candidate_id: int, approve: bool),
+  CandidatesPageData(after: int). В callback только типизированные ID, без ссылок/секретов.
+
+Модели (не мигрированы в рабочую SQLite):
+
+- lh_discovery_runs: slug PK, query_index, attempts, status, due_at (индекс), error, updated_at.
+- lh_join_jobs: id PK, candidate_id FK UNIQUE, approved_by, status (индекс), attempts,
+  due_at (индекс), lease_until, token, error.
+  Статусы pending/processing/retry_wait/completed/failed/ambiguous.
+- lh_join_attempts: id PK, job_id FK (индекс), token UNIQUE, started_at (индекс), outcome.
+- ReaderState ключи: candidate_links (последний raw ID), join_pause (UTC ISO),
+  join_stopped (причина/пусто после /join_resume), source_review (JSON), source_alerts,
+  growth heartbeat. Существующие cooldown:* переиспользуются.
+
+Публичные контракты Этапов 1–3 сохранены. Проверка runtime теперь также требует
+три новые таблицы; это намеренный отказ запуска до согласованной миграции.
+Кандидат pending_approval не означает членство. joined означает подтверждённое
+членство; source.status=removed сохраняется и не включается обратно автоматически.
