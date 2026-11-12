@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -170,6 +171,7 @@ class Keyword(Base):
     word: Mapped[str] = mapped_column(Text)
     type: Mapped[str] = mapped_column(String(16))
     is_regex: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class Payment(Base):
@@ -184,3 +186,72 @@ class Payment(Base):
     telegram_payment_charge_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     payload: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class RawMessage(Base):
+    __tablename__ = "lh_raw_messages"
+    __table_args__ = (
+        UniqueConstraint("chat_id", "message_id"),
+        Index("ix_lh_raw_author_hash", "author_tg_id", "text_hash"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_chat_id: Mapped[int] = mapped_column(ForeignKey("lh_source_chats.id"))
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int] = mapped_column(Integer)
+    source_title: Mapped[str] = mapped_column(Text)
+    original_text: Mapped[str] = mapped_column(Text)
+    message_link: Mapped[str | None] = mapped_column(Text)
+    author_tg_id: Mapped[int | None] = mapped_column(BigInteger)
+    author_username: Mapped[str | None] = mapped_column(String(64))
+    author_name: Mapped[str | None] = mapped_column(Text)
+    language: Mapped[str | None] = mapped_column(String(32))
+    published_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    received_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    payload: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    text_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    category_hint: Mapped[str | None] = mapped_column(String(64))
+    delivery_mode: Mapped[str] = mapped_column(String(16), default="dry_run")
+
+
+class IngestJob(Base):
+    __tablename__ = "lh_ingest_jobs"
+    __table_args__ = (CheckConstraint("status IN ('pending','processing','completed','failed','retry_wait')"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    raw_id: Mapped[int] = mapped_column(ForeignKey("lh_raw_messages.id"), unique=True)
+    phase: Mapped[str] = mapped_column(String(32), default="prefilter", index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    token: Mapped[str | None] = mapped_column(String(32))
+    errors: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class DedupClaim(Base):
+    __tablename__ = "lh_dedup_claims"
+    __table_args__ = (UniqueConstraint("text_hash", "author_key"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text_hash: Mapped[str] = mapped_column(String(64))
+    author_key: Mapped[str] = mapped_column(String(100))
+    raw_id: Mapped[int] = mapped_column(ForeignKey("lh_raw_messages.id"))
+    expires_at: Mapped[datetime] = mapped_column(UTCDateTime(), index=True)
+
+
+class SourceRuntime(Base):
+    __tablename__ = "lh_source_runtime"
+    source_id: Mapped[int] = mapped_column(ForeignKey("lh_source_chats.id"), primary_key=True)
+    history_message_id: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    last_success: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    error: Mapped[str | None] = mapped_column(Text)
+
+
+class ReaderState(Base):
+    __tablename__ = "lh_reader_state"
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    detail: Mapped[str] = mapped_column(Text, default="")

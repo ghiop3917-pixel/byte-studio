@@ -1,5 +1,6 @@
 """Асинхронные сессии. Рабочая SQLite по умолчанию открывается только для чтения."""
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.db.models import Base
 class Database:
     def __init__(self, settings: Settings, *, read_only: bool = True, testing: bool = False) -> None:
         url = make_url(settings.database_url)
+        self._write_guard = asyncio.Lock()
         self.testing = testing
         self.read_only = read_only
         if url.drivername == "postgresql+asyncpg":
@@ -64,14 +66,19 @@ class Database:
 
     @asynccontextmanager
     async def session(self) -> AsyncIterator[AsyncSession]:
-        async with self.sessions() as session:
-            try:
-                yield session
-                if not self.read_only:
-                    await session.commit()
-            except BaseException:
-                await session.rollback()
-                raise
+        from contextlib import nullcontext
+
+        # Один владелец записи на экземпляр Database, в том числе для SQLite в памяти.
+        guard = nullcontext() if self.read_only else self._write_guard
+        async with guard:
+            async with self.sessions() as session:
+                try:
+                    yield session
+                    if not self.read_only:
+                        await session.commit()
+                except BaseException:
+                    await session.rollback()
+                    raise
 
     async def close(self) -> None:
         await self.engine.dispose()

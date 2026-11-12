@@ -72,13 +72,13 @@ async def verify_schema(database: Database) -> bool:
         if not ready:
             return False
         if "core_locks" in names:
-            query = text("SELECT 1 FROM core_locks WHERE name='monitor' AND lease_until>:now")
+            query = text("SELECT 1 FROM core_locks WHERE name IN ('monitor','source_growth') AND lease_until>:now")
             if (await connection.execute(query, {"now": time.time()})).first():
                 raise RuntimeError(texts.LEGACY_RUNNING)
         return True
 
 
-async def run_interface(settings: Settings) -> None:
+async def _run(settings: Settings, with_reader: bool) -> None:
     if not settings.bot_token.get_secret_value():
         raise ValueError(texts.BOT_MISSING)
     inspection = Database(settings)
@@ -89,10 +89,14 @@ async def run_interface(settings: Settings) -> None:
         await inspection.close()
     with instance_lock():
         database = Database(settings, read_only=False)
+        from app.pipeline.ingestion import Ingestion
+        from app.userbot.client import ReaderHub, run_reader
+
+        hub = ReaderHub() if with_reader else None
 
         async def polling() -> None:
             bot = Bot(settings.bot_token.get_secret_value())
-            dispatcher = Dispatcher()
+            dispatcher = Dispatcher(reader_hub=hub)
             dispatcher.include_router(create_router(database, settings))
             try:
                 await dispatcher.start_polling(bot, handle_signals=False, close_bot_session=False)
@@ -101,7 +105,19 @@ async def run_interface(settings: Settings) -> None:
                 await bot.session.close()
 
         try:
-            await run_services({"bot": polling}, settings, asyncio.Event())
+            services = {"bot": polling}
+            if with_reader:
+                services["reader"] = lambda: run_reader(database, settings, hub=hub)
+                services["ingestion"] = Ingestion(database, settings).processing_loop
+            await run_services(services, settings, asyncio.Event())
             raise RuntimeError(texts.INTERFACE_STOPPED)
         finally:
             await database.close()
+
+
+async def run_interface(settings: Settings) -> None:
+    await _run(settings, False)
+
+
+async def run_application(settings: Settings) -> None:
+    await _run(settings, True)

@@ -76,6 +76,32 @@ class Settings(BaseSettings):
     retry_initial_seconds: float = Field(default=5, gt=0)
     retry_max_seconds: float = Field(default=300, gt=0)
 
+    reader_flood_padding_seconds: float = Field(default=1, ge=0)
+    reader_refresh_seconds: float = Field(default=60, gt=0)
+    reader_poll_seconds: float = Field(default=1, gt=0)
+    reader_rpc_interval_seconds: float = Field(default=2, ge=0)
+    reader_source_interval_seconds: float = Field(default=20, gt=0)
+    reader_initial_history_limit: int = Field(default=100, ge=1, le=100)
+    reader_history_batch_size: int = Field(default=100, ge=1, le=100)
+    reader_source_max_attempts: int = Field(default=5, ge=1)
+    ingest_max_attempts: int = Field(default=3, ge=1)
+    ingest_lease_seconds: float = Field(default=120, gt=0)
+    ingest_poll_seconds: float = Field(default=1, gt=0)
+    keyword_max_length: int = Field(default=100, ge=1, le=100)
+    admin_list_limit: int = Field(default=20, ge=1, le=20)
+    regex_text_limit: int = Field(default=512, ge=1, le=4096)
+    default_keywords: dict[str, tuple[str, ...]] = Field(
+        default_factory=lambda: {
+            "web_dev": ("сайт", "лендинг", "бот", "crm", "автоматизац", "website", "telegram bot", "app"),
+            "web_design": ("дизайн", "figma", "designer"),
+            "ai_orders": ("нейросет", "искусственный интеллект", "ai specialist"),
+            "tech_specialists": ("разработчик", "программист", "developer"),
+            "jobs": ("вакансия", "vacancy", "hiring"),
+            "freelance_jobs": ("фриланс", "freelance"),
+            "seo": ("seo", "сео", "продвижение сайта"),
+        }
+    )
+    default_exclude_keywords: tuple[str, ...] = ("ищете клиентов", "предлагаю услуги", "уже нашли исполнителя")
     auto_join: bool = False
     max_chats: int = Field(default=450, ge=1)
     daily_join_limit: int = Field(default=10, ge=0)

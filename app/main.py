@@ -14,17 +14,18 @@ __all__ = ["main", "run_services"]
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Единый бот")
     parser.add_argument("--bot", action="store_true", help="Явно запустить интерфейс, без миграций")
+    parser.add_argument("--run", action="store_true", help="Бот, читатель и очередь в одном процессе")
     parser.add_argument("--online", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    if args.bot:
-        from app.bot.runtime import run_interface
+    if args.bot or args.run:
+        from app.bot.runtime import run_application, run_interface
         from app.config import get_settings
 
         try:
             settings = get_settings()
             logging.basicConfig(level=settings.log_level)
-            asyncio.run(run_interface(settings))
+            asyncio.run(run_application(settings) if args.run else run_interface(settings))
             return 0
         except KeyboardInterrupt:
             return 0

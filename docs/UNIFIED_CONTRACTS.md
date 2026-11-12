@@ -284,3 +284,56 @@
 - `save_geo(message: aiogram.types.message.Message, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
 
 Callback-префиксы: page(name), category(category_id, enabled), score(value), geo(action). ID пользователя не кодируется.
+
+
+## Контракты Этапа 3
+
+Старые публичные функции сохранены. Дополнения:
+
+- app.bot.runtime.run_application(settings: Settings) -> None — явный совместный запуск.
+- login.login(path: Path, api_id: int, api_hash: str) -> bool — только отсутствующая сессия.
+- utils.text.normalize_text(value: str) -> str; text_hash(value: str) -> str.
+- utils.links.parse_chat_reference(value: str) -> ChatReference(username, invite_hash).
+- utils.links.message_link(chat_id: int, username: str | None, message_id: int,
+  thread_id: int | None = None) -> str | None.
+- pipeline.prefilter.KeywordRule(slug, word, kind, is_regex=False).
+- validate_keyword(word: str, regex: bool, settings: Settings) -> str.
+- prefilter(value: str, metadata: dict, rules: tuple[KeywordRule, ...],
+  settings: Settings) -> FilterResult(accepted, reason, category_hint).
+- pipeline.ingestion.IncomingMessage(chat_id, message_id, text, published_at=None,
+  author_tg_id=None, author_username=None, author_name=None, metadata=None).
+- SourceInfo(id, chat_id, title, username, access_hash); JobClaim(id, raw_id, token, attempts).
+- Ingestion(database, settings): active_sources(), seed_keywords(),
+  ingest(source_id, message, *, history=False) -> int | None, recover(now=None) -> int,
+  claim() -> JobClaim | None, retry(claim, error), process_one() -> bool,
+  requeue(raw_id), heartbeat(key, detail=''), cooldown(kind), set_cooldown(kind, seconds),
+  history_state(source_id), source_success(source_id),
+  source_error(source_id, error, *, unavailable=False), processing_loop().
+- userbot.client.snapshot(source, message) -> IncomingMessage.
+- ReaderRPC(storage, settings).call(kind, action); ReaderCooldown обозначает сохранённую паузу.
+- TelegramReader(client, storage, settings, rpc=None): refresh(), on_message(event),
+  collect_history(source), history_loop().
+- ReaderHub(): reader=None; resolve(username), refresh().
+- run_reader(database, settings, *, hub=None) -> None.
+- AdminSources(database, settings, hub=None): require_admin(tg_id),
+  add_chat(tg_id, reference) -> tuple[str, str], remove_chat(tg_id, identity),
+  chats(tg_id) -> tuple[dict, ...], keywords(tg_id, slug, *, action='list',
+  kind=None, word=None, keyword_id=None, regex=False) -> tuple[dict, ...].
+
+Физические таблицы, только декларации моделей:
+
+- lh_raw_messages: id, source_chat_id FK, chat_id, message_id, source_title,
+  original_text, message_link, author_tg_id, author_username, author_name, language,
+  published_at, received_at, payload, status, reason, text_hash, category_hint, delivery_mode.
+  UNIQUE(chat_id,message_id), индекс (author_tg_id,text_hash), индексы даты/статуса/хеша.
+- lh_ingest_jobs: id, raw_id FK UNIQUE, phase, status, attempts, due_at, lease_until,
+  token, errors; состояния pending/processing/completed/failed/retry_wait.
+- lh_dedup_claims: id, text_hash, author_key, raw_id FK, expires_at;
+  UNIQUE(text_hash,author_key). Оригиналы остаются источником проверки окна.
+- lh_source_runtime: source_id FK PK, history_message_id, status, attempts,
+  due_at, last_success, error.
+- lh_reader_state: key PK, updated_at, detail (heartbeat и cooldown).
+- lh_keywords: добавлено is_active, удаление только логическое.
+
+Все даты UTC. Данные и DDL рабочей monitor.sqlite3 не менялись.
+Предварительно подходящие сообщения ждут phase=classifier, без фиктивного score/summary.
