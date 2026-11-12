@@ -90,3 +90,84 @@ IP/CIDR через запятую, например `127.0.0.1,10.0.0.0/8`. CLI 
 сети в доверенные. Это не включает публичное развёртывание и не меняет защиту Origin.
 Лимит формы — пять попыток в час, включая отклонённые; точный повтор принятого request_id
 возвращает прежнюю квитанцию и не расходует лимит. IP хранится только в виде хеша.
+
+
+## Единый бот — новый каркас, Этап 1
+
+Рабочий каталог: **C:/byte-studio**. Сайт, CRM и прежние команды сохранены.
+Новая точка входа `app.main` на Этапе 1 выполняет диагностику и выходит;
+пользовательские обработчики ещё не подключены. Это не запущенный новый бот.
+
+Целевой Python — 3.11; локально проверено на Python 3.12. Новый стек установлен
+в отдельное `.venv`, пакеты глобального окружения не заменялись.
+`requirements.txt` обновлён по новому ТЗ: aiogram 3, Telethon 1, SQLAlchemy async,
+aiosqlite, pydantic-settings и httpx. openpyxl сохранён для существующей CRM.
+pytest находится в requirements-dev.txt.
+
+### Установка и офлайн-проверка
+
+```powershell
+Set-Location C:\byte-studio
+python -m venv --system-site-packages .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+.\.venv\Scripts\python.exe -m app.check
+.\.venv\Scripts\python.exe -m app.main
+.\check.cmd
+.\.venv\Scripts\python.exe -m pytest tests/test_unified_stage1.py -q
+```
+
+Если `.venv` уже создано, повторно создавать его не нужно.
+check.cmd автоматически выбирает `.venv/Scripts/python.exe`, check.sh —
+`.venv/bin/python`, если такое окружение существует.
+
+Ожидается OK для Python, библиотек, конфига, read-only SQLite и существующего
+файла сессии. SKIP schema нормален: новые таблицы в рабочую базу не добавлялись.
+Сетевые проверки по умолчанию SKIP. Настоящая .env не создаётся автоматически
+и никогда не добавляется в Git. Старые переменные TELEGRAM_BOT_TOKEN,
+TELEGRAM_LEADS_API_ID и TELEGRAM_LEADS_API_HASH поддерживаются как алиасы.
+
+Для сознательной сетевой диагностики нужны одновременно `--online` и
+`CHECK_NETWORK=true`. Telegram-токен и API ID/API hash задаются владельцем.
+LLM дополнительно требует LLM_ENABLED=true и LLM_MODEL. По умолчанию LLM
+выключена, адрес локальный. Реальные сетевые проверки в ходе разработки не выполнялись.
+
+### Сохранность существующей базы
+
+Модели логических users/categories/leads и других сущностей имеют физический
+префикс `lh_`, чтобы не конфликтовать с прежними leads/lead_feedback CRM.
+Все сущности остаются в **той же monitor.sqlite3**; вторая рабочая БД не создаётся.
+Database по умолчанию read-only. Новая SQLite при неверном пути не создаётся.
+create_all разрешён только в тестовой SQLite в памяти и не заменяет миграцию.
+ALLOW_SCHEMA_CHANGES=true сам по себе не выполняет DDL. Рабочая схема не менялась.
+Согласованная аддитивная миграция и интеграция с прежними очередями ещё не реализованы.
+UTCDateTime хранит даты как ISO-8601 UTC и возвращает timezone-aware datetime.
+Репозиторий не отправляет сообщения; lead_deliveries хранит факт доставки,
+но не гарантирует exactly-once сетевую отправку.
+
+Для будущего PostgreSQL подготовлен DATABASE_URL с драйвером postgresql+asyncpg;
+при таком переходе отдельно потребуется asyncpg. Драйвер и реальный сервер пока
+не установлены и не проверялись. Офлайн-диагностика к PostgreSQL не подключается.
+
+### Docker
+
+```powershell
+$env:TELEGRAM_SESSION_HOST = Join-Path $env:LOCALAPPDATA 'TelegramLeads/monitor.session'
+docker compose config
+docker compose build
+docker compose run --rm lead-hunter
+```
+
+Нужна ранее созданная .env. Контейнер один, Python 3.11-slim; SQLite и существующая
+сессия подключаются read-only. Docker не создаёт отсутствующие bind-файлы.
+На Этапе 1 контейнер выполняет диагностику и завершается. Docker CLI в текущем
+окружении не найден, сборка образа не проверялась.
+
+### Типичные ошибки
+
+- ModuleNotFoundError: запускайте `.venv/Scripts/python.exe`, установив requirements.
+- Неверная SQLite: проверьте DATABASE_URL; автоматического создания файла не будет.
+- FAIL session_file: задайте TELEGRAM_LEADS_SESSION или TELEGRAM_SESSION_PATHS;
+  повторный вход и изменение существующего файла для диагностики не нужны.
+
+Контракты: docs/UNIFIED_CONTRACTS.md. Состояние: docs/PROJECT_STATE.md.

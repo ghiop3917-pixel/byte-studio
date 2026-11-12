@@ -28,3 +28,6 @@ business-candidates.json
 htmlcov/
 .ruff_cache/
 ruff-findings.json
+
+# Изолированное окружение нового приложения
+.venv/

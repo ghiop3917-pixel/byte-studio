@@ -1,0 +1,15 @@
+.git
+.venv
+.env
+.env.*
+!.env.example
+*.session*
+*.sqlite*
+*.db*
+backups
+artifacts
+__pycache__
+.pytest_cache
+.ruff_cache
+.coverage*
+docs/previews

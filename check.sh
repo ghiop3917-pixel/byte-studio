@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
-python -m ruff check .
-python -m coverage run -m unittest discover -s tests
-python -m coverage report
+CHECK_PYTHON=python
+if [ -x .venv/bin/python ]; then CHECK_PYTHON=.venv/bin/python; fi
+"$CHECK_PYTHON" -m ruff check .
+"$CHECK_PYTHON" -m coverage run -m unittest discover -s tests
+"$CHECK_PYTHON" -m coverage report

@@ -1,0 +1,27 @@
+services:
+  lead-hunter:
+    build: .
+    init: true
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////data/monitor.sqlite3
+      TELEGRAM_SESSION_PATHS: '["/session/monitor.session"]'
+      DRY_RUN: "true"
+      ADMIN_ONLY_DELIVERY: "true"
+      ALLOW_SCHEMA_CHANGES: "false"
+      CHECK_NETWORK: "false"
+    volumes:
+      - type: bind
+        source: ./monitor.sqlite3
+        target: /data/monitor.sqlite3
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${TELEGRAM_SESSION_HOST:?Укажите существующий файл сессии в TELEGRAM_SESSION_HOST}
+        target: /session/monitor.session
+        read_only: true
+        bind:
+          create_host_path: false
