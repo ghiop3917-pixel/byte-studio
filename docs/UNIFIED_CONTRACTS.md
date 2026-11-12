@@ -224,3 +224,63 @@
 | is_banned | BOOLEAN | False | False |
 | is_admin | BOOLEAN | False | False |
 
+
+
+# Дополнение контрактов — Этап 2
+
+Контракты Этапа 1 не переименованы. Accounts всегда получает tg_id из Telegram update, не из callback.
+
+## app.bot.accounts
+
+- `AccountError`
+- `AccountView(tg_id: int, subscription_until: datetime.datetime | None, min_score: int, geo_filter: str | None, categories: tuple[tuple[int, str, str, bool], ...], received_day: int, received_week: int) -> None`
+- `Accounts(database: app.db.session.Database, settings: app.config.Settings) -> None`
+  - `Accounts.register(self, tg_id: int, username: str | None) -> app.bot.accounts.AccountView`
+  - `Accounts.view(self, tg_id: int) -> app.bot.accounts.AccountView`
+  - `Accounts.set_category(self, tg_id: int, category_id: int, enabled: bool) -> app.bot.accounts.AccountView`
+  - `Accounts.set_score(self, tg_id: int, score: int) -> app.bot.accounts.AccountView`
+  - `Accounts.set_geo(self, tg_id: int, value: str | None) -> app.bot.accounts.AccountView`
+
+## app.bot.keyboards
+
+- `PageData(*, name: str) -> None`
+- `CategoryData(*, category_id: int, enabled: bool) -> None`
+- `ScoreData(*, value: int) -> None`
+- `GeoData(*, action: str) -> None`
+- `home_button() -> list[aiogram.types.inline_keyboard_button.InlineKeyboardButton]`
+- `keyboard(page: str, view: app.bot.accounts.AccountView, settings: app.config.Settings) -> aiogram.types.inline_keyboard_markup.InlineKeyboardMarkup`
+
+## app.bot.screens
+
+- `subscription_status(view: app.bot.accounts.AccountView, settings: app.config.Settings) -> str`
+- `screen(page: str, view: app.bot.accounts.AccountView, settings: app.config.Settings, *, name: str = '') -> str`
+
+## app.bot.router
+
+- `ContextMiddleware(accounts: app.bot.accounts.Accounts) -> None`
+- `create_router(database: app.db.session.Database, settings: app.config.Settings) -> aiogram.dispatcher.router.Router`
+
+## app.bot.runtime
+
+- `instance_lock(path: pathlib.Path = WindowsPath('C:/byte-studio/.bot-ui.lock')) -> Iterator[NoneType]`
+- `verify_schema(database: app.db.session.Database) -> bool`
+- `run_interface(settings: app.config.Settings) -> None`
+
+## app.bot.handlers.start
+
+- `start(message: aiogram.types.message.Message, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+- `menu(message: aiogram.types.message.Message, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+
+## app.bot.handlers.menu
+
+- `GeoInput()`
+  - `GeoInput.value(event: aiogram.types.base.TelegramObject, raw_state: str | None = None) -> bool`
+- `actor(callback: aiogram.types.callback_query.CallbackQuery) -> int`
+- `edit(callback: aiogram.types.callback_query.CallbackQuery, page: str, view: app.bot.accounts.AccountView, accounts: app.bot.accounts.Accounts) -> None`
+- `navigate(callback: aiogram.types.callback_query.CallbackQuery, callback_data: app.bot.keyboards.PageData, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+- `category(callback: aiogram.types.callback_query.CallbackQuery, callback_data: app.bot.keyboards.CategoryData, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+- `score(callback: aiogram.types.callback_query.CallbackQuery, callback_data: app.bot.keyboards.ScoreData, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+- `geo(callback: aiogram.types.callback_query.CallbackQuery, callback_data: app.bot.keyboards.GeoData, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+- `save_geo(message: aiogram.types.message.Message, state: aiogram.fsm.context.FSMContext, accounts: app.bot.accounts.Accounts) -> None`
+
+Callback-префиксы: page(name), category(category_id, enabled), score(value), geo(action). ID пользователя не кодируется.

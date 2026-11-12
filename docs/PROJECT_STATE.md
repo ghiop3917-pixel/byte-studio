@@ -1,4 +1,4 @@
-# PROJECT_STATE — Этап 1 единого бота
+# PROJECT_STATE — Этап 2 единого бота
 
 ## Местоположение и существующий проект
 
@@ -44,12 +44,18 @@ Alembic не используется; автоматического bootstrap 
 - Существующая сессия читается в MemorySession, без перезаписи или смены авторизации.
 - PostgreSQL подготовлен на уровне DSN/фабрики; потребуется optional asyncpg и проверка сервера.
 
-## Ещё не реализовано в рамках каркаса
+## Текущее состояние интерфейса
 
-Рабочие обработчики единого бота и подключение потоков мониторинга, классификация,
-рассылка, платёжные обработчики и миграция новых таблиц. main сейчас диагностирует
-окружение и выходит; это явно не выдаётся за работающий новый сервис.
-Супервизор готов и проверяется Fake-сервисами в одном event loop.
+Этап 2: app/bot/accounts.py, keyboards.py, screens.py, router.py, runtime.py,
+handlers/start.py, handlers/menu.py, handlers/__init__.py и tests/test_unified_stage2.py.
+Есть /start/trial, /menu, /cancel, категории, score, гео, подписка без оплаты,
+личные реальные счётчики. Dispatcher проверен с Fake Telegram transport.
+main без --bot остаётся офлайн-диагностикой. --bot требует полной схемы lh_,
+не запускает миграции и откажет до записей, если таблиц/полей нет.
+Новая схема в monitor.sqlite3 не применялась; работающий бот этой ветки не запущен.
+Осталось: согласованная аддитивная миграция, подключение мониторинга/очередей,
+классификатор, персональная доставка, чаты, Stars и сквозная приёмка.
+Подробная последовательность: REMAINING.md.
 
 ## Переменные .env (полный безопасный пример)
 
@@ -119,6 +125,10 @@ NETWORK_TIMEOUT_SECONDS=30
 LLM_HEALTH_MAX_TOKENS=16
 # Только для Docker: абсолютный путь к существующей сессии на хосте.
 TELEGRAM_SESSION_HOST=
+
+DEFAULT_CATEGORY_SLUG=web_dev
+SCORE_CHOICES=[30,50,70,90]
+GEO_MAX_LENGTH=100
 ```
 
 Совместимые алиасы: TELEGRAM_BOT_TOKEN, TELEGRAM_LEADS_API_ID, TELEGRAM_LEADS_API_HASH, TELEGRAM_LEADS_SESSION.
@@ -126,8 +136,8 @@ TELEGRAM_SESSION_HOST=
 
 ## Самопроверка и результаты
 
-- check.cmd: 172 теста, 8 ожидаемых пропусков, OK; покрытие всего проекта 84%.
-- pytest tests/test_unified_stage1.py -q: 16 passed, 8 subtests passed.
+- check.cmd: 183 теста, 8 ожидаемых пропусков, OK; покрытие всего проекта 85%.
+- pytest tests/test_unified_stage1.py tests/test_unified_stage2.py -q: 27 passed, 8 subtests passed.
 - ruff check .: All checks passed. pip check: No broken requirements found.
 - app.check и app.main: офлайн OK; schema/bot/userbot/llm — безопасный SKIP.
 - Новые модели UTC и ограничения проверены в SQLite в памяти; транзакционный rollback
@@ -141,9 +151,21 @@ TELEGRAM_SESSION_HOST=
 - create_all не запускается для рабочей SQLite. Alembic и DDL-миграция не применялись.
 - Не проверены Docker (CLI не найден), Python 3.11 как интерпретатор, Linux/POSIX,
   реальная авторизация Telegram, внешняя LLM, реальный PostgreSQL.
-- Пункты чек-листа о callback/HTML карточках, Stars, NewMessage, поиске и нормализованном
-  кросспостинге пока не реализованы и не выдаются за готовые функции Этапа 1.
+- Stars, NewMessage, поиск и нормализованный кросспостинг ещё не реализованы.
+  Callback и HTML-экранирование экранов реализованы и проверены в Этапе 2.
 - AUTO_JOIN и другие новые настройки относятся к app/, не переписывают поведение
   старых expand_sources.py/source_growth.py. Эти старые утилиты не запускались.
 
-Остановка: Этап 1 завершён как каркас. Продолжать только после слова владельца «дальше».
+Первый каркас завершён; после команды владельца реализован Этап 2. Дальше не переходить без новой команды.
+
+
+## Снимок Этапа 2 перед GitHub-checkpoint
+
+Полный код сохраняется на GitHub без базы, backups, .env, сессии и .venv.
+Настройки score_choices/default_category_slug/geo_max_length добавлены в конфиг.
+Все старые контракты сохранены, новые описаны в UNIFIED_CONTRACTS.md.
+Тесты интерфейса используют SQLite в памяти и RecordingSession вместо сети.
+Реальный polling, Telegram-доставка и миграция не выполнялись. Оплата выключена.
+Docker/Linux и реальный PostgreSQL остаются непроверенными.
+
+Итог перед сохранением: 183 unittest, 8 ожидаемых пропусков, 27 pytest, покрытие 85%; ruff OK. Хеши 141 защищённого файла и сессии не изменились. Этап 2 окончен, следующие этапы пока не начинать.

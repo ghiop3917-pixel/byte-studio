@@ -31,3 +31,5 @@ ruff-findings.json
 
 # Изолированное окружение нового приложения
 .venv/
+
+.bot-ui.lock

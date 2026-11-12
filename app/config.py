@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     service_retry_initial_seconds: float = Field(default=5, gt=0)
     service_retry_max_seconds: float = Field(default=300, gt=0)
     service_max_restarts: int = Field(default=5, ge=1)
+    default_category_slug: str = "web_dev"
+    score_choices: tuple[int, ...] = (30, 50, 70, 90)
+    geo_max_length: int = Field(default=100, ge=1, le=100)
     dry_run: bool = True
     admin_only_delivery: bool = True
     default_min_score: int = Field(default=DEFAULT_MIN_SCORE, ge=0, le=100)
@@ -97,6 +100,20 @@ class Settings(BaseSettings):
     lead_excerpt_length: int = Field(default=300, ge=1)
     summary_max_length: int = Field(default=120, ge=1)
     subscription_reminder_hours: int = Field(default=24, ge=1)
+
+    @field_validator("score_choices")
+    @classmethod
+    def validate_score_choices(cls, value: tuple[int, ...]) -> tuple[int, ...]:
+        if not value or any(score < 0 or score > 100 for score in value):
+            raise ValueError("Пороги score должны быть в диапазоне 0–100.")
+        return tuple(dict.fromkeys(value))
+
+    @field_validator("default_category_slug")
+    @classmethod
+    def validate_default_category(cls, value: str) -> str:
+        if value not in {slug for slug, _ in INITIAL_CATEGORIES}:
+            raise ValueError("Неизвестная категория по умолчанию.")
+        return value
 
     @field_validator("admin_ids")
     @classmethod
