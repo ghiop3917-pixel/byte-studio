@@ -11,22 +11,38 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-
 CATEGORIES = {
-    "Сайты и магазины": r"сайт\w*|лендинг\w*|website\w*|web\s*site\w*|landing(?:\s+page)?|online\s+store|ecommerce|интернет[ -]магазин\w*|веб[ -]?сайт\w*|веб[ -]?портал\w*|(?:информационн\w*|корпоративн\w*)\s+портал\w*|онлайн[ -]каталог\w*|витрин\w*|tilda|тильд\w*|wordpress",
-    "Приложения": r"(?:мини|веб|мобильн\w*|телеграм|десктопн\w*)[ -]?приложени\w*|mini[ -]?app\w*|(?:web|mobile|desktop)[ -]?(?:app\w*|application\w*)|приложени\w*|десктопн\w*\s+программ\w*",
+    ("Сайты и магазины"): "сайт\\w*|лендинг\\w*|website\\w*|web\\s*site\\w*|landing(?:\\s+pag"
+    "e)?|online\\s+store|ecommerce|интернет[ -]магазин\\w*|веб[ -]?"
+    "сайт\\w*|веб[ -]?портал\\w*|(?:информационн\\w*|корпоративн\\w*)"
+    "\\s+портал\\w*|онлайн[ -]каталог\\w*|витрин\\w*|tilda|тильд\\w*|w"
+    "ordpress",
+    ("Приложения"): "(?:мини|веб|мобильн\\w*|телеграм|десктопн\\w*)[ -]?приложени\\w"
+    "*|mini[ -]?app\\w*|(?:web|mobile|desktop)[ -]?(?:app\\w*|appli"
+    "cation\\w*)|приложени\\w*|десктопн\\w*\\s+программ\\w*",
     "Боты": r"(?:чат[ -]?)?бот(?:а|у|ом|е|ы|ов|ам|ами|ах)?|(?:telegram\s+)?(?:chat)?bots?",
-    "CRM и автоматизация": r"crm|црм|срм|амосрм|amo\s?crm|битрикс\w*|автоматизац\w*|интеграц\w*|automation|automate\w*|integration\w*|n8n|систем\w*\s+записи|обрабатыва\w*\s+заявки\s+вручную",
-    "Другие задачи разработки": r"разработчик\w*|программист\w*|фронтенд\w*|бэкенд\w*|фуллстек\w*|веб[ -]?сервис\w*|личн\w* кабинет\w*|api|mvp|парсер\w*|saas",
+    ("CRM и автоматизация"): "crm|црм|срм|амосрм|amo\\s?crm|битрикс\\w*|автоматизац\\w*|интег"
+    "рац\\w*|automation|automate\\w*|integration\\w*|n8n|систем\\w*\\s"
+    "+записи|обрабатыва\\w*\\s+заявки\\s+вручную",
+    ("Другие задачи разработки"): "разработчик\\w*|программист\\w*|фронтенд\\w*|бэкенд\\w*|фуллстек"
+    "\\w*|веб[ -]?сервис\\w*|личн\\w* кабинет\\w*|api|mvp|парсер\\w*|s"
+    "aas",
     "Дизайн": r"дизайн\w*|логотип\w*|баннер\w*|иллюстра\w*|figma|презентац\w*|инфографик\w*",
-    "Видео, фото и звук": r"монтаж\w*|видеомонтаж\w*|рилс\w*|reels|видеоролик\w*|ретуш\w*|фотограф\w*|озвуч\w*|субтитр\w*",
-    "Тексты и переводы": r"копирайт\w*|рерайт\w*|стать(?:я|ю|и|ей)|текст\w*|переводчик\w*|перевести\s+текст\w*|редактор\w*",
+    (
+        "Видео, фото и звук"
+    ): r"монтаж\w*|видеомонтаж\w*|рилс\w*|reels|видеоролик\w*|ретуш\w*|фотограф\w*|озвуч\w*|субтитр\w*",
+    (
+        "Тексты и переводы"
+    ): r"копирайт\w*|рерайт\w*|стать(?:я|ю|и|ей)|текст\w*|переводчик\w*|перевести\s+текст\w*|редактор\w*",
     "Маркетинг": r"smm|seo|сео|таргет\w*|реклам\w*|директолог\w*|продвижени\w*|маркетолог\w*",
     "Другие фриланс-заказы": r"фрилансер\w*|исполнител\w*|подрядчик\w*|разов\w*\s+задач\w*|проектн\w*\s+работ\w*",
 }
 CATEGORY_PATTERNS = {label: re.compile(rf"\b(?:{pattern})\b") for label, pattern in CATEGORIES.items()}
 DIRECTIONS = {
-    "dev": ("Разработка", ("Сайты и магазины", "Приложения", "Боты", "CRM и автоматизация", "Другие задачи разработки")),
+    "dev": (
+        "Разработка",
+        ("Сайты и магазины", "Приложения", "Боты", "CRM и автоматизация", "Другие задачи разработки"),
+    ),
     "design": ("Дизайн", ("Дизайн",)),
     "video": ("Видео и звук", ("Видео, фото и звук",)),
     "text": ("Тексты и переводы", ("Тексты и переводы",)),
@@ -88,7 +104,8 @@ CLOSED_REQUEST = re.compile(
 EARLY_NEED = re.compile(
     r"(?:обрабатыва\w*\s+заявки\s+вручную|manually\s+(?:process|handl)\w*\s+(?:orders|leads)|"
     r"(?:process|handl)\w*\s+(?:orders|leads)\s+manually|"
-    r"сайт\s+(?:перестал\s+|не\s+)справля\w*|нуж\w*\s+автоматиз\w*)", re.IGNORECASE,
+    r"сайт\s+(?:перестал\s+|не\s+)справля\w*|нуж\w*\s+автоматиз\w*)",
+    re.IGNORECASE,
 )
 EXTRA_SCOPE = re.compile(
     r"\b(?:website\w*|web\s*site|landing\s+page|online\s+store|ecommerce|"
@@ -110,8 +127,12 @@ def classify(text, directions=("dev",)):
             re.search(r"\b(?:хочу|хотим|планируем)\b", clause) and PROJECT_ACTION.search(clause)
         ):
             continue
-        if ("dev" in directions and (PROJECT_SCOPE.search(clause) or EXTRA_SCOPE.search(clause)) and not COMPLEX_PROJECT.search(value)
-                and (not NON_DEVELOPMENT.search(clause) or DEVELOPMENT_ACTION.search(clause))):
+        if (
+            "dev" in directions
+            and (PROJECT_SCOPE.search(clause) or EXTRA_SCOPE.search(clause))
+            and not COMPLEX_PROJECT.search(value)
+            and (not NON_DEVELOPMENT.search(clause) or DEVELOPMENT_ACTION.search(clause))
+        ):
             matched = {label for label in DIRECTIONS["dev"][1] if CATEGORY_PATTERNS[label].search(clause)}
             categories.update(matched or {"Другие задачи разработки"})
         for key in directions:
@@ -147,13 +168,13 @@ class Telegram:
         self.base_url = f"https://api.telegram.org/bot{token}/"
 
     def call(self, method, **params):
-        request = Request(
+        request = Request(  # noqa: S310 — фиксированный HTTPS-хост api.telegram.org
             self.base_url + method,
             data=json.dumps(params).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urlopen(request, timeout=40) as response:
+            with urlopen(request, timeout=40) as response:  # noqa: S310 — фиксированный HTTPS-хост api.telegram.org
                 result = json.load(response)
         except HTTPError as error:
             try:
@@ -180,21 +201,38 @@ class Telegram:
             keyboard.append([{"text": "💬 Написать заказчику", "url": contact}])
         if lead_id is not None:
             keyboard.append([{"text": "⭐ Сохранить заявку", "callback_data": f"save:{lead_id}"}])
-            keyboard.append([
-                {"text": "👍 Подходит", "callback_data": f"fb:approved:{lead_id}"},
-                {"text": "👎 Мусор", "callback_data": f"fb:rejected:{lead_id}"},
-                {"text": "🤔 Не уверен", "callback_data": f"fb:needs_review:{lead_id}"},
-            ])
+            keyboard.append(
+                [
+                    {"text": "👍 Подходит", "callback_data": f"fb:approved:{lead_id}"},
+                    {"text": "👎 Мусор", "callback_data": f"fb:rejected:{lead_id}"},
+                    {"text": "🤔 Не уверен", "callback_data": f"fb:needs_review:{lead_id}"},
+                ]
+            )
         if keyboard:
             options["reply_markup"] = {"inline_keyboard": keyboard}
         return self.call(
-            "sendMessage", chat_id=chat_id, text=text,
-            link_preview_options={"is_disabled": True}, **options,
+            "sendMessage",
+            chat_id=chat_id,
+            text=text,
+            link_preview_options={"is_disabled": True},
+            **options,
         )
 
 
-def handle_update(telegram, db, update, owner_id, source_ids, bot_username, *, directions=("dev",),
-                  record_leads=False, identity=None, manage_transaction=True, analysis=None):
+def handle_update(
+    telegram,
+    db,
+    update,
+    owner_id,
+    source_ids,
+    bot_username,
+    *,
+    directions=("dev",),
+    record_leads=False,
+    identity=None,
+    manage_transaction=True,
+    analysis=None,
+):
     message = update.get("message")
     if not message:
         return
@@ -234,18 +272,20 @@ def handle_update(telegram, db, update, owner_id, source_ids, bot_username, *, d
     original = "" if link else f" · сообщение № {message['message_id']}"
     explicit_contact = re.search(
         r"(?:контакт(?:\s+для\s+связи)?|для\s+связи|писать|пишите|отклик)\s*[:—-]?\s*"
-        r"(?:@|https?://t\.me/)([a-zA-Z][a-zA-Z0-9_]{4,31})\b", text, re.IGNORECASE,
+        r"(?:@|https?://t\.me/)([a-zA-Z][a-zA-Z0-9_]{4,31})\b",
+        text,
+        re.IGNORECASE,
     )
     username = explicit_contact[1] if explicit_contact else (sender.get("username") or "")
     contact = f"https://t.me/{username}" if re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_]{4,31}", username) else None
     from sales_drafts import make_draft
-    language = analysis["language"] if analysis is not None else (
-        "ru" if re.search(r"[а-яёА-ЯЁ]", text) else "en"
-    )
+
+    language = analysis["language"] if analysis is not None else ("ru" if re.search(r"[а-яёА-ЯЁ]", text) else "en")
     draft = make_draft(text, categories, language)
     assessment = ""
     if analysis is not None:
         from lead_analysis import INTENTS
+
         explanation = "; ".join(
             f"+{reason['points']} {reason['reason']}" for reason in analysis["reasons"] if reason["points"]
         )
@@ -270,8 +310,7 @@ def handle_update(telegram, db, update, owner_id, source_ids, bot_username, *, d
             ).lastrowid
         telegram.send(owner_id, card, link, parse_mode="HTML", lead_id=lead_id, contact=contact)
         db.execute(
-            "INSERT INTO delivered VALUES (?, ?) "
-            "ON CONFLICT(fingerprint) DO UPDATE SET sent_at = excluded.sent_at",
+            "INSERT INTO delivered VALUES (?, ?) ON CONFLICT(fingerprint) DO UPDATE SET sent_at = excluded.sent_at",
             (key, timestamp),
         )
 
@@ -283,8 +322,7 @@ def main():
     try:
         owner_id = int(os.environ["TELEGRAM_OWNER_ID"]) if os.environ.get("TELEGRAM_OWNER_ID") else None
         source_ids = {
-            int(item.strip()) for item in os.environ.get("TELEGRAM_SOURCE_IDS", "").split(",")
-            if item.strip()
+            int(item.strip()) for item in os.environ.get("TELEGRAM_SOURCE_IDS", "").split(",") if item.strip()
         }
         if (owner_id is not None and owner_id <= 0) or any(item >= 0 for item in source_ids):
             raise ValueError
@@ -310,11 +348,11 @@ def main():
         while True:
             try:
                 updates = telegram.call(
-                    "getUpdates", offset=offset, timeout=25,
+                    "getUpdates",
+                    offset=offset,
+                    timeout=25,
                     allowed_updates=["message"],
                 )
-                if not updates:
-                    offset = 0
                 for update in updates:
                     handle_update(telegram, db, update, owner_id, source_ids, bot_username)
                     offset = update["update_id"] + 1

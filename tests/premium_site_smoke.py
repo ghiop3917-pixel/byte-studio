@@ -2,7 +2,8 @@
 
 Проверка предыдущей WebGL-версии сохранена в резервной копии перед импортом.
 """
+
 from imported_site_smoke import main
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

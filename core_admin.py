@@ -25,11 +25,22 @@ def main():
             print("Внимание: повтор неоднозначной доставки может создать дубль в Telegram.")
             retry_notification(db, args.retry_notification)
         if args.retry_source:
-            db.execute("UPDATE source_health SET status='pending',attempts=0,due_at=0 WHERE username=?",
-                       (args.retry_source.lstrip("@"),))
+            db.execute(
+                "UPDATE source_health SET status='pending',attempts=0,due_at=0 WHERE username=?",
+                (args.retry_source.lstrip("@"),),
+            )
         for table in ("processing_queue", "notification_queue", "source_health"):
-            print(table, json.dumps(dict(db.execute(f"SELECT status,count(*) FROM {table} GROUP BY status")),
-                                    ensure_ascii=False))
+            print(
+                table,
+                json.dumps(
+                    dict(
+                        db.execute(
+                            f"SELECT status,count(*) FROM {table} GROUP BY status"  # noqa: S608 — имя таблицы из белого списка
+                        )
+                    ),
+                    ensure_ascii=False,
+                ),
+            )
         print("Heartbeat", [dict(row) for row in db.execute("SELECT * FROM core_heartbeat")])
     finally:
         db.close()

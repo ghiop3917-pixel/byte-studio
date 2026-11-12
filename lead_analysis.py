@@ -3,8 +3,14 @@
 import re
 
 from bot import (
-    CATEGORY_PATTERNS, CLOSED_REQUEST, DIRECTIONS, EARLY_NEED, EMPLOYMENT,
-    OFFER, PROMOTION, classify,
+    CATEGORY_PATTERNS,
+    CLOSED_REQUEST,
+    DIRECTIONS,
+    EARLY_NEED,
+    EMPLOYMENT,
+    OFFER,
+    PROMOTION,
+    classify,
 )
 
 VERSION = "rules-v4"
@@ -21,7 +27,8 @@ INTENTS = {
 }
 PROMO_EN = re.compile(
     r"\b(?:we|i)\s+(?:build|create|offer|develop)\b|\bour services\b|"
-    r"ищу\s+(?:клиентов|заказы|работу)|заработок\s+без\s+опыта", re.IGNORECASE,
+    r"ищу\s+(?:клиентов|заказы|работу)|заработок\s+без\s+опыта",
+    re.IGNORECASE,
 )
 RECOMMENDATION = re.compile(r"посоветуй\w*|порекомендуй\w*|recommend\w*", re.IGNORECASE)
 CONTRACTOR = re.compile(r"\b(?:ищу|ищем|looking\s+for|seeking|найти\s+(?:разработчика|подрядчика))\b", re.IGNORECASE)
@@ -37,15 +44,18 @@ ADVERTISING = re.compile(
 URGENCY = re.compile(r"срочно|urgent|asap|до\s+\d{1,2}[./]|by\s+(?:friday|monday|tomorrow)", re.IGNORECASE)
 BUDGET = re.compile(
     r"(?:бюджет|budget|оплат\w*)[^\n.!?]{0,35}\d|"
-    r"\d[\d\s,.]*(?:₽|руб\w*|usd|eur|rub|dollars?)\b|[$€]\s*\d", re.IGNORECASE,
+    r"\d[\d\s,.]*(?:₽|руб\w*|usd|eur|rub|dollars?)\b|[$€]\s*\d",
+    re.IGNORECASE,
 )
 DETAILS = re.compile(
     r"каталог|корзин|запис[ьи]|заявк|оплат|интеграц|страниц|магазин|"
-    r"catalog|cart|booking|payment|integration|pages?|orders?|leads?", re.IGNORECASE,
+    r"catalog|cart|booking|payment|integration|pages?|orders?|leads?",
+    re.IGNORECASE,
 )
 ADVICE = re.compile(
     r"нужен\s+совет|какую\s+(?:платформу|cms)|как\s+самому|"
-    r"which\s+(?:platform|tool)|what\s+(?:platform|tool)", re.IGNORECASE,
+    r"which\s+(?:platform|tool)|what\s+(?:platform|tool)",
+    re.IGNORECASE,
 )
 SERVICE_FALLBACK = {
     "Сайты и магазины": r"сайт|website|landing|e-?commerce|online store",
@@ -61,8 +71,9 @@ def analyze(content, directions=("dev",), author=None):
     selected = tuple(key for key in directions if key in DIRECTIONS)
     allowed = {category for key in selected for category in DIRECTIONS[key][1]}
     categories = classify(content, selected)
-    hints = {category for category, pattern in CATEGORY_PATTERNS.items()
-             if category in allowed and pattern.search(value)}
+    hints = {
+        category for category, pattern in CATEGORY_PATTERNS.items() if category in allowed and pattern.search(value)
+    }
     if "dev" in selected:
         hints.update(category for category, pattern in SERVICE_FALLBACK.items() if re.search(pattern, value))
     author = author or {}
@@ -89,7 +100,8 @@ def analyze(content, directions=("dev",), author=None):
         intent = "direct_order"
     elif hints and re.search(
         r"вопрос|проект|помочь|проблем|нуж|ищ|хочу|как|обсужда|совет|запуска|"
-        r"want|help|project|need|question|issue|problem|how|planning|manually|вручную", value,
+        r"want|help|project|need|question|issue|problem|how|planning|manually|вручную",
+        value,
     ):
         intent = "uncertain"
     else:
@@ -111,21 +123,46 @@ def analyze(content, directions=("dev",), author=None):
     else:
         components = [
             (25, "Услуга соответствует выбранным направлениям"),
-            ({"direct_order": 25, "contractor_search": 25, "recommendation": 15,
-              "early_need": 10, "uncertain": 0}[intent], INTENTS[intent]),
-            (15 if features["specific_task"] else 5, "Подробность задачи" if features["specific_task"] else "Краткий запрос"),
-            (15 if features["readiness"] else 0, "Признак готовности заказать" if features["readiness"] else "Готовность заказать не подтверждена"),
-            (10 if features["has_contact"] else 0, "Доступен контакт" if features["has_contact"] else "Контакт не указан"),
-            (5 if features["has_budget"] else 0, "В тексте указан бюджет" if features["has_budget"] else "Бюджет не указан"),
+            (
+                {"direct_order": 25, "contractor_search": 25, "recommendation": 15, "early_need": 10, "uncertain": 0}[
+                    intent
+                ],
+                INTENTS[intent],
+            ),
+            (
+                15 if features["specific_task"] else 5,
+                "Подробность задачи" if features["specific_task"] else "Краткий запрос",
+            ),
+            (
+                15 if features["readiness"] else 0,
+                "Признак готовности заказать" if features["readiness"] else "Готовность заказать не подтверждена",
+            ),
+            (
+                10 if features["has_contact"] else 0,
+                "Доступен контакт" if features["has_contact"] else "Контакт не указан",
+            ),
+            (
+                5 if features["has_budget"] else 0,
+                "В тексте указан бюджет" if features["has_budget"] else "Бюджет не указан",
+            ),
             (5 if features["urgent"] else 0, "Указана срочность" if features["urgent"] else "Срочность не указана"),
         ]
         reasons = [{"points": points, "reason": reason} for points, reason in components]
         score = min(100, sum(points for points, _ in components))
-        bucket = "lead" if score >= 65 and intent in {"direct_order", "contractor_search", "recommendation"} else "review"
+        bucket = (
+            "lead" if score >= 65 and intent in {"direct_order", "contractor_search", "recommendation"} else "review"
+        )
         if categories == ["Другие задачи разработки"] and not features["specific_task"]:
             bucket = "review"
     return {
-        "version": VERSION, "engine": "rules", "intent": intent, "language": language,
-        "score": score, "bucket": bucket, "categories": categories,
-        "reasons": reasons, "features": features, "directions": list(selected),
+        "version": VERSION,
+        "engine": "rules",
+        "intent": intent,
+        "language": language,
+        "score": score,
+        "bucket": bucket,
+        "categories": categories,
+        "reasons": reasons,
+        "features": features,
+        "directions": list(selected),
     }

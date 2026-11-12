@@ -1,5 +1,4 @@
 import json
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -20,7 +19,9 @@ class AnalysisTests(unittest.TestCase):
         migrate(self.db)
         self.message = {
             "chat": {"id": -10022, "type": "supergroup", "title": "Тест", "username": "testgroup"},
-            "message_id": 1, "text": "Нужен сайт для кафе", "from": {"id": 10, "username": "testclient"},
+            "message_id": 1,
+            "text": "Нужен сайт для кафе",
+            "from": {"id": 10, "username": "testclient"},
         }
 
     def tearDown(self):
@@ -109,7 +110,8 @@ class AnalysisTests(unittest.TestCase):
     def test_drafts_use_language_task_and_do_not_repeat_provided_information(self):
         draft = make_draft(
             "Нужен лендинг. Есть референс https://example.com. Срок до 1 декабря. Бюджет 50000 рублей.",
-            ["Сайты и магазины"], "ru",
+            ["Сайты и магазины"],
+            "ru",
         )
         self.assertIn("Нужен лендинг", draft)
         self.assertNotIn("Какой бюджет", draft)
@@ -164,7 +166,9 @@ class QualityAPITests(unittest.TestCase):
         migrate(self.db)
         self.message = {
             "chat": {"id": -10033, "type": "supergroup", "title": "Тест"},
-            "message_id": 1, "text": "Нужен сайт для кафе", "from": {"username": "testclient"},
+            "message_id": 1,
+            "text": "Нужен сайт для кафе",
+            "from": {"username": "testclient"},
         }
         self.auth = "Bearer " + "x" * 40
         self.api = CRMApp(self.path, 9, "x" * 40)
@@ -177,8 +181,12 @@ class QualityAPITests(unittest.TestCase):
         ingest(self.db, self.message, 9)
         process_one(self.db, lambda _: ("dev",))
         telegram = Mock()
-        callback = {"id": "callback_one", "from": {"id": 9}, "data": "fb:approved:1",
-                    "message": {"chat": {"id": 9}, "message_id": 10}}
+        callback = {
+            "id": "callback_one",
+            "from": {"id": 9},
+            "data": "fb:approved:1",
+            "message": {"chat": {"id": 9}, "message_id": 10},
+        }
         with patch("bot_menu.MONITOR_DB", self.path):
             dispatch(telegram, {"callback_query": callback}, 9, 27)
             dispatch(telegram, {"callback_query": callback}, 9, 27)
@@ -193,8 +201,9 @@ class QualityAPITests(unittest.TestCase):
         process_one(self.db, lambda _: ("dev",))
         _, data = self.api.request("GET", "/api/reviews", self.auth)
         self.assertEqual(json.loads(data)["total"], 1)
-        self.api.request("POST", f"/api/reviews/{raw_id}/decision", self.auth,
-                         {"decision": "approved"}, "review_request_00001")
+        self.api.request(
+            "POST", f"/api/reviews/{raw_id}/decision", self.auth, {"decision": "approved"}, "review_request_00001"
+        )
         process_one(self.db, lambda _: ("dev",))
         self.assertEqual(self.db.execute("SELECT count(*) FROM leads").fetchone()[0], 1)
         _, report = self.api.request("GET", "/api/quality", self.auth)
@@ -204,8 +213,12 @@ class QualityAPITests(unittest.TestCase):
         ingest(self.db, self.message, 9)
         process_one(self.db, lambda _: ("dev",))
         with patch("bot_menu.MONITOR_DB", self.path):
-            callback = {"id": "callback_two", "from": {"id": 9}, "data": "fb:needs_review:1",
-                        "message": {"chat": {"id": 9}, "message_id": 10}}
+            callback = {
+                "id": "callback_two",
+                "from": {"id": 9},
+                "data": "fb:needs_review:1",
+                "message": {"chat": {"id": 9}, "message_id": 10},
+            }
             dispatch(Mock(), {"callback_query": callback}, 9, 27)
         self.assertEqual(Quality(self.db, 9).reviews()["total"], 1)
         self.assertEqual(self.db.execute("SELECT count(*) FROM leads").fetchone()[0], 1)
@@ -213,16 +226,21 @@ class QualityAPITests(unittest.TestCase):
     def test_api_feedback_is_consistent_with_bot_review_flow(self):
         ingest(self.db, self.message, 9)
         process_one(self.db, lambda _: ("dev",))
-        self.api.request("POST", "/api/leads/1/feedback", self.auth,
-                         {"decision": "needs_review", "reason": "Проверить"}, "feedback_request_001")
+        self.api.request(
+            "POST",
+            "/api/leads/1/feedback",
+            self.auth,
+            {"decision": "needs_review", "reason": "Проверить"},
+            "feedback_request_001",
+        )
         self.assertEqual(Quality(self.db, 9).reviews()["total"], 1)
-        self.api.request("POST", "/api/leads/1/feedback", self.auth,
-                         {"decision": "approved"}, "feedback_request_002")
+        self.api.request("POST", "/api/leads/1/feedback", self.auth, {"decision": "approved"}, "feedback_request_002")
         self.assertEqual(Quality(self.db, 9).reviews()["total"], 0)
         self.assertEqual(Quality(self.db, 9).report()["observed_approval_rate"], 1)
 
     def test_review_menu_escapes_text_and_displays_score(self):
         from bot_menu import show
+
         self.message["text"] = "Какую платформу выбрать для сайта <test>?"
         raw_id = ingest(self.db, self.message, 9)
         process_one(self.db, lambda _: ("dev",))

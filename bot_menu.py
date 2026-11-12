@@ -1,8 +1,8 @@
 import asyncio
 import json
 import logging
-import sqlite3
 import re
+import sqlite3
 from contextlib import closing
 from html import escape
 from pathlib import Path
@@ -30,12 +30,13 @@ def set_directions(recipient, selected):
 
 def screen(page, group_count, selected=("dev",)):
     if page == "directions":
-        buttons = [[{"text": f"{'✅' if key in selected else '◻️'} {title}", "callback_data": f"dir:{key}"}]
-                   for key, (title, _) in DIRECTIONS.items()]
+        buttons = [
+            [{"text": f"{'✅' if key in selected else '◻️'} {title}", "callback_data": f"dir:{key}"}]
+            for key, (title, _) in DIRECTIONS.items()
+        ]
         buttons.append([{"text": "‹ Главное меню", "callback_data": "home"}])
         return (
-            "🎛 <b>Направления</b>\n\n"
-            "Нажми на направление, чтобы включить или выключить его. Можно выбрать несколько.",
+            "🎛 <b>Направления</b>\n\nНажми на направление, чтобы включить или выключить его. Можно выбрать несколько.",
             buttons,
         )
     if page == "status":
@@ -59,18 +60,22 @@ def screen(page, group_count, selected=("dev",)):
         "⚡ <b>Заказ Сигнал</b>\n\n"
         "Заявки на разработку из бизнес-чатов. "
         "В каждой карточке есть текст задачи, источник и ссылка на оригинал.",
-        [[{"text": "🎛 Направления", "callback_data": "directions"}],
-         [{"text": "🔎 На проверку", "callback_data": "reviews"},
-          {"text": "📈 Качество", "callback_data": "quality"}],
-         [{"text": "⭐ Сохранённые", "callback_data": "saved"},
-          {"text": "🕘 Последние", "callback_data": "recent"}],
-         [{"text": "📡 Статус", "callback_data": "status"},
-          {"text": "🎯 Что ищу", "callback_data": "examples"}]],
+        [
+            [{"text": "🎛 Направления", "callback_data": "directions"}],
+            [
+                {"text": "🔎 На проверку", "callback_data": "reviews"},
+                {"text": "📈 Качество", "callback_data": "quality"},
+            ],
+            [{"text": "⭐ Сохранённые", "callback_data": "saved"}, {"text": "🕘 Последние", "callback_data": "recent"}],
+            [{"text": "📡 Статус", "callback_data": "status"}, {"text": "🎯 Что ищу", "callback_data": "examples"}],
+        ],
     )
 
 
 def show(telegram, chat_id, page, group_count, message_id=None):
-    if page in {"quality", "reviews", "sources_quality", "maintenance"} or re.fullmatch(r"(?:reviews|review):\d{1,18}", page):
+    if page in {"quality", "reviews", "sources_quality", "maintenance"} or re.fullmatch(
+        r"(?:reviews|review):\d{1,18}", page
+    ):
         text, keyboard = quality_screen(chat_id, page)
     elif page in {"saved", "recent"}:
         with closing(sqlite3.connect(MONITOR_DB)) as db:
@@ -93,7 +98,9 @@ def show(telegram, chat_id, page, group_count, message_id=None):
     else:
         text, keyboard = screen(page, group_count, saved_directions(chat_id))
     options = {
-        "chat_id": chat_id, "text": text, "parse_mode": "HTML",
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
         "reply_markup": {"inline_keyboard": keyboard},
     }
     if message_id is None:
@@ -105,9 +112,16 @@ def dispatch(telegram, update, recipient, group_count):
     message = update.get("message", {})
     chat = message.get("chat", {})
     if chat.get("type") == "private" and chat.get("id") == recipient:
-        page = {"/start": "home", "/menu": "home", "/status": "status",
-                "/directions": "directions", "/reviews": "reviews", "/quality": "quality",
-                "/sourcesquality":"sources_quality", "/maintenance":"maintenance"}.get(message.get("text"))
+        page = {
+            "/start": "home",
+            "/menu": "home",
+            "/status": "status",
+            "/directions": "directions",
+            "/reviews": "reviews",
+            "/quality": "quality",
+            "/sourcesquality": "sources_quality",
+            "/maintenance": "maintenance",
+        }.get(message.get("text"))
         if page:
             show(telegram, recipient, page, group_count)
     callback = update.get("callback_query")
@@ -117,32 +131,47 @@ def dispatch(telegram, update, recipient, group_count):
     if message.get("chat", {}).get("id") != recipient:
         return
     page = callback.get("data", "")
-    reason_match = re.fullmatch(r'fbr:(spam|irrelevant|closed|duplicate):([1-9]\d{0,17})',page)
+    reason_match = re.fullmatch(r"fbr:(spam|irrelevant|closed|duplicate):([1-9]\d{0,17})", page)
     if reason_match:
+        from crm import Conflict, NotFound
         from quality import Quality
         from reliability import open_database, transaction
-        from crm import NotFound, Conflict
-        reasons={'spam':'Реклама / рассылка','irrelevant':'Нецелевая задача','closed':'Заказ закрыт','duplicate':'Дубликат'}
-        response='Причина сохранена'
+
+        reasons = {
+            "spam": "Реклама / рассылка",
+            "irrelevant": "Нецелевая задача",
+            "closed": "Заказ закрыт",
+            "duplicate": "Дубликат",
+        }
+        response = "Причина сохранена"
         try:
             with closing(open_database(MONITOR_DB)) as db, transaction(db):
-                if not db.execute('SELECT 1 FROM bot_feedback_receipts WHERE callback_id=? AND recipient=?',(callback['id'],recipient)).fetchone():
-                    Quality(db,recipient).feedback(int(reason_match[2]),'rejected',reasons[reason_match[1]])
-                    db.execute('INSERT INTO bot_feedback_receipts VALUES (?,?,?)',(callback['id'],recipient,response))
-        except (NotFound,Conflict,ValueError):response='Заявка недоступна'
-        telegram.call('answerCallbackQuery',callback_query_id=callback['id'],text=response)
+                if not db.execute(
+                    "SELECT 1 FROM bot_feedback_receipts WHERE callback_id=? AND recipient=?",
+                    (callback["id"], recipient),
+                ).fetchone():
+                    Quality(db, recipient).feedback(int(reason_match[2]), "rejected", reasons[reason_match[1]])
+                    db.execute(
+                        "INSERT INTO bot_feedback_receipts VALUES (?,?,?)", (callback["id"], recipient, response)
+                    )
+        except (NotFound, Conflict, ValueError):
+            response = "Заявка недоступна"
+        telegram.call("answerCallbackQuery", callback_query_id=callback["id"], text=response)
         return
     feedback = re.fullmatch(r"(fb|reviewfb):(approved|rejected|needs_review):([1-9]\d{0,17})", page)
     if feedback:
         from crm import Conflict, NotFound
         from quality import Quality
         from reliability import open_database, transaction
+
         response = "Решение сохранено"
         fresh_decision = False
         try:
             with closing(open_database(MONITOR_DB)) as db, transaction(db):
-                receipt = db.execute("SELECT response FROM bot_feedback_receipts WHERE callback_id=? AND recipient=?",
-                                     (callback["id"], recipient)).fetchone()
+                receipt = db.execute(
+                    "SELECT response FROM bot_feedback_receipts WHERE callback_id=? AND recipient=?",
+                    (callback["id"], recipient),
+                ).fetchone()
                 if receipt:
                     response = receipt["response"]
                 else:
@@ -153,19 +182,35 @@ def dispatch(telegram, update, recipient, group_count):
                         service.decide(int(feedback[3]), feedback[2])
                         if feedback[2] == "approved":
                             response = "Передано в очередь обработки"
-                    db.execute("INSERT INTO bot_feedback_receipts VALUES (?,?,?)",
-                               (callback["id"], recipient, response))
+                    db.execute(
+                        "INSERT INTO bot_feedback_receipts VALUES (?,?,?)", (callback["id"], recipient, response)
+                    )
                     fresh_decision = True
         except (NotFound, Conflict, ValueError):
             response = "Не удалось применить решение. Обнови карточку."
         telegram.call("answerCallbackQuery", callback_query_id=callback["id"], text=response)
-        if fresh_decision and feedback[1]=='fb' and feedback[2]=='rejected' and message.get('reply_markup'):
-            keyboard=message['reply_markup'].get('inline_keyboard',[])
-            if not any(str(button.get('callback_data','')).startswith('fbr:') for row in keyboard for button in row):
-                keyboard=keyboard+[[{'text':'Реклама','callback_data':f'fbr:spam:{feedback[3]}'},{'text':'Не мой заказ','callback_data':f'fbr:irrelevant:{feedback[3]}'}],
-                                   [{'text':'Закрыт','callback_data':f'fbr:closed:{feedback[3]}'},{'text':'Повтор','callback_data':f'fbr:duplicate:{feedback[3]}'}]]
-                try:telegram.call('editMessageReplyMarkup',chat_id=recipient,message_id=message['message_id'],reply_markup={'inline_keyboard':keyboard})
-                except TelegramError:logging.warning('Причина оценки сохранится при выборе в CRM.')
+        if fresh_decision and feedback[1] == "fb" and feedback[2] == "rejected" and message.get("reply_markup"):
+            keyboard = message["reply_markup"].get("inline_keyboard", [])
+            if not any(str(button.get("callback_data", "")).startswith("fbr:") for row in keyboard for button in row):
+                keyboard = keyboard + [
+                    [
+                        {"text": "Реклама", "callback_data": f"fbr:spam:{feedback[3]}"},
+                        {"text": "Не мой заказ", "callback_data": f"fbr:irrelevant:{feedback[3]}"},
+                    ],
+                    [
+                        {"text": "Закрыт", "callback_data": f"fbr:closed:{feedback[3]}"},
+                        {"text": "Повтор", "callback_data": f"fbr:duplicate:{feedback[3]}"},
+                    ],
+                ]
+                try:
+                    telegram.call(
+                        "editMessageReplyMarkup",
+                        chat_id=recipient,
+                        message_id=message["message_id"],
+                        reply_markup={"inline_keyboard": keyboard},
+                    )
+                except TelegramError:
+                    logging.warning("Причина оценки сохранится при выборе в CRM.")
         if feedback[1] == "reviewfb" and response not in {"Не удалось применить решение. Обнови карточку."}:
             show(telegram, recipient, f"review:{feedback[3]}", group_count, message["message_id"])
         return
@@ -175,8 +220,11 @@ def dispatch(telegram, update, recipient, group_count):
                 "UPDATE leads SET saved = 1 WHERE id = ? AND recipient = ?",
                 (int(page[5:]), recipient),
             ).rowcount
-        telegram.call("answerCallbackQuery", callback_query_id=callback["id"],
-                      text="Заявка сохранена" if updated else "Заявка недоступна")
+        telegram.call(
+            "answerCallbackQuery",
+            callback_query_id=callback["id"],
+            text="Заявка сохранена" if updated else "Заявка недоступна",
+        )
         return
     telegram.call("answerCallbackQuery", callback_query_id=callback["id"])
     if page.startswith("dir:") and page[4:] in DIRECTIONS:
@@ -184,7 +232,18 @@ def dispatch(telegram, update, recipient, group_count):
         selected.symmetric_difference_update({page[4:]})
         set_directions(recipient, selected)
         page = "directions"
-    if page in {"home", "status", "examples", "directions", "recent", "saved", "reviews", "quality", "sources_quality", "maintenance"} or re.fullmatch(r"(?:reviews|review):\d{1,18}", page):
+    if page in {
+        "home",
+        "status",
+        "examples",
+        "directions",
+        "recent",
+        "saved",
+        "reviews",
+        "quality",
+        "sources_quality",
+        "maintenance",
+    } or re.fullmatch(r"(?:reviews|review):\d{1,18}", page):
         show(telegram, recipient, page, group_count, message["message_id"])
 
 
@@ -192,24 +251,37 @@ def quality_screen(recipient, page):
     from lead_analysis import INTENTS
     from quality import Quality
     from reliability import open_database
+
     back = [{"text": "‹ Главное меню", "callback_data": "home"}]
     with closing(open_database(MONITOR_DB)) as db:
         service = Quality(db, recipient)
-        if page=='sources_quality':
+        if page == "sources_quality":
             from insights import Insights
-            report=Insights(db,recipient).report()
-            lines=['📊 <b>Источники за 30 дней</b>','Полезность — по твоим оценкам, не по баллам фильтра.']
-            for source in report['sources'][:8]:
-                rate=f"{source['observed_approval_rate']:.0%} из {source['judged']} оценок" if source['judged']>=5 else 'мало оценок'
-                lines.append(f"\n<b>{escape(source['name'])}</b>\nСообщений: {source['messages']} · карточек: {source['leads']}\nПодходит: {source['approved']} · мусор: {source['rejected']} · {rate}")
-            return '\n'.join(lines),[[{'text':'‹ Качество','callback_data':'quality'}]]
-        if page=='maintenance':
+
+            report = Insights(db, recipient).report()
+            lines = ["📊 <b>Источники за 30 дней</b>", "Полезность — по твоим оценкам, не по баллам фильтра."]
+            for source in report["sources"][:8]:
+                rate = (
+                    f"{source['observed_approval_rate']:.0%} из {source['judged']} оценок"
+                    if source["judged"] >= 5
+                    else "мало оценок"
+                )
+                lines.append(
+                    f"\n<b>{escape(source['name'])}</b>"
+                    f"\nСообщений: {source['messages']} · карточек: {source['leads']}"
+                    f"\nПодходит: {source['approved']} · мусор: {source['rejected']} · {rate}"
+                )
+            return "\n".join(lines), [[{"text": "‹ Качество", "callback_data": "quality"}]]
+        if page == "maintenance":
             from maintenance import operations_report
-            report=operations_report(db,recipient)
-            return ('🛠 <b>Обслуживание</b>\n\n'
-                    f"Проверок внимания: {len(report['health']['alerts'])}\n"
-                    f"Проверенных плановых копий: {len(report['backups'])}\n"
-                    'Расписание и подробности — в CRM. Служебные рассылки выключены.'),[back]
+
+            report = operations_report(db, recipient)
+            return (
+                "🛠 <b>Обслуживание</b>\n\n"
+                f"Проверок внимания: {len(report['health']['alerts'])}\n"
+                f"Проверенных плановых копий: {len(report['backups'])}\n"
+                "Расписание и подробности — в CRM. Служебные рассылки выключены."
+            ), [back]
         if page == "quality":
             report = service.report()
             rate = report["observed_approval_rate"]
@@ -223,8 +295,13 @@ def quality_screen(recipient, page):
                 "Оценка выполняется правилами. Полнота поиска ещё не измерена. "
                 "Обратная связь сохраняется, изменения правил требуют отдельного решения."
             )
-            return text, [[{'text':'📊 Качество чатов','callback_data':'sources_quality'},
-                           {'text':'🛠 Обслуживание','callback_data':'maintenance'}],back]
+            return text, [
+                [
+                    {"text": "📊 Качество чатов", "callback_data": "sources_quality"},
+                    {"text": "🛠 Обслуживание", "callback_data": "maintenance"},
+                ],
+                back,
+            ]
         if page.startswith("review:"):
             review = service.review(int(page.split(":")[1]))
             result = review["analysis"]
@@ -236,21 +313,28 @@ def quality_screen(recipient, page):
                 f"<blockquote>{escape(review['original_text'][:1500])}</blockquote>\n"
                 f"📍 {escape(review['source'])}\n\n{escape(explanation)}"
             )
-            keyboard = [[
-                {"text": "✅ Подходит", "callback_data": f"reviewfb:approved:{review['raw_id']}"},
-                {"text": "👎 Мусор", "callback_data": f"reviewfb:rejected:{review['raw_id']}"},
-                {"text": "🤔 Не уверен", "callback_data": f"reviewfb:needs_review:{review['raw_id']}"},
-            ]]
+            keyboard = [
+                [
+                    {"text": "✅ Подходит", "callback_data": f"reviewfb:approved:{review['raw_id']}"},
+                    {"text": "👎 Мусор", "callback_data": f"reviewfb:rejected:{review['raw_id']}"},
+                    {"text": "🤔 Не уверен", "callback_data": f"reviewfb:needs_review:{review['raw_id']}"},
+                ]
+            ]
             if review["url"]:
                 keyboard.append([{"text": "↗ Оригинал", "url": review["url"]}])
             keyboard.append([{"text": "‹ Очередь проверки", "callback_data": "reviews"}])
             return text, keyboard
         offset = int(page.split(":")[1]) if ":" in page else 0
         reviews = service.reviews(limit=8, offset=offset)
-        keyboard = [[{
-            "text": f"#{item['raw_id']} · {item['score']}/100 · {item['original_text'][:35]}",
-            "callback_data": f"review:{item['raw_id']}",
-        }] for item in reviews["items"]]
+        keyboard = [
+            [
+                {
+                    "text": f"#{item['raw_id']} · {item['score']}/100 · {item['original_text'][:35]}",
+                    "callback_data": f"review:{item['raw_id']}",
+                }
+            ]
+            for item in reviews["items"]
+        ]
         navigation = []
         if offset:
             navigation.append({"text": "‹ Назад", "callback_data": f"reviews:{max(0, offset - 8)}"})
@@ -272,7 +356,10 @@ async def run_menu(telegram, recipient, group_count):
     while True:
         try:
             updates = await asyncio.to_thread(
-                telegram.call, "getUpdates", offset=offset, timeout=20,
+                telegram.call,
+                "getUpdates",
+                offset=offset,
+                timeout=20,
                 allowed_updates=["message", "callback_query"],
             )
         except TelegramError as error:

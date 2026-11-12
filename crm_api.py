@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -10,11 +11,11 @@ import re
 import time
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 from bot_menu import MONITOR_DB
-from crm import CRM, Conflict, NotFound, STATUSES, identifier
+from crm import CRM, STATUSES, Conflict, NotFound, identifier
 from crm_export import export
 from monitor import recipient_id
 from reliability import migrate, open_database, transaction
@@ -24,8 +25,28 @@ class Unauthorized(Exception):
     pass
 
 
+def trusted_proxies(value=""):
+    """Явный список IP или CIDR доверенных прокси, через запятую."""
+    return tuple(ipaddress.ip_network(item.strip(), strict=False) for item in value.split(",") if item.strip())
+
+
+def client_ip(peer, forwarded, networks=()):
+    address = ipaddress.ip_address(peer)
+    if not any(address in network for network in networks) or not forwarded:
+        return str(address)
+    try:
+        chain = [ipaddress.ip_address(item.strip()) for item in forwarded.split(",")]
+    except ValueError:
+        return str(address)
+    for address in reversed(chain):
+        if not any(address in network for network in networks):
+            return str(address)
+    return str(address)
+
+
 class CRMApp:
-    def __init__(self, database, owner_id, token):
+    def __init__(self, database, owner_id, token, proxies=""):
+        self.trusted_proxies = trusted_proxies(proxies)
         if not isinstance(token, str) or len(token) < 32:
             raise ValueError("CRM_API_TOKEN должен содержать минимум 32 символа.")
         self.database = database
@@ -45,7 +66,9 @@ class CRMApp:
         if not isinstance(data, dict):
             raise ValueError("Тело запроса должно быть JSON-объектом.")
         mutation = method in {"POST", "PATCH"}
-        if mutation and (not isinstance(idempotency_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", idempotency_key)):
+        if mutation and (
+            not isinstance(idempotency_key, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", idempotency_key)
+        ):
             raise ValueError("Для изменения нужен Idempotency-Key длиной 16–128 символов.")
         request_hash = hashlib.sha256(json.dumps([method, target, data], sort_keys=True).encode()).hexdigest()
         with closing(open_database(self.database)) as db:
@@ -61,17 +84,22 @@ class CRMApp:
                             raise Conflict("Этот Idempotency-Key уже использован для другого запроса.")
                         return previous["content_type"], previous["response"]
                 result = route(service, method, parsed.path.rstrip("/") or "/", query, data)
-                response = result if isinstance(result, tuple) else (
-                    "application/json; charset=utf-8", json.dumps(result, ensure_ascii=False).encode("utf-8")
+                response = (
+                    result
+                    if isinstance(result, tuple)
+                    else ("application/json; charset=utf-8", json.dumps(result, ensure_ascii=False).encode("utf-8"))
                 )
                 if mutation:
-                    db.execute("INSERT INTO crm_api_requests VALUES (?,?,?,?,?,?)",
-                               (self.owner, idempotency_key, request_hash, *response, time.time()))
+                    db.execute(
+                        "INSERT INTO crm_api_requests VALUES (?,?,?,?,?,?)",
+                        (self.owner, idempotency_key, request_hash, *response, time.time()),
+                    )
                 return response
 
     def intake(self, data, client_address):
         from web_intake import submit
-        client_hash = hashlib.sha256(f'byte-intake:{self.owner}:{client_address}'.encode()).hexdigest()
+
+        client_hash = hashlib.sha256(f"byte-intake:{self.owner}:{client_address}".encode()).hexdigest()
         with closing(open_database(self.database)) as db:
             return submit(db, self.owner, data, client_hash)
 
@@ -99,42 +127,53 @@ def require_fields(data, required, optional=()):
 
 
 def route(service, method, path, query, data):
-    if path == '/api/insights' and method == 'GET':
+    if path == "/api/insights" and method == "GET":
         from insights import Insights
-        if set(query)-{'days'}:raise ValueError('Неизвестный параметр статистики качества.')
-        return Insights(service.db,service.owner).report(int(query.get('days',30)))
-    if path == '/api/suggestions':
+
+        if set(query) - {"days"}:
+            raise ValueError("Неизвестный параметр статистики качества.")
+        return Insights(service.db, service.owner).report(int(query.get("days", 30)))
+    if path == "/api/suggestions":
         from insights import Insights
-        insights=Insights(service.db,service.owner)
-        if method=='GET':return insights.suggestions()
-        if method=='POST':
-            require_fields(data,())
+
+        insights = Insights(service.db, service.owner)
+        if method == "GET":
+            return insights.suggestions()
+        if method == "POST":
+            require_fields(data, ())
             return insights.generate_suggestions()
-    suggestion=re.fullmatch(r'/api/suggestions/([1-9]\d{0,17})/decision',path)
-    if suggestion and method=='POST':
+    suggestion = re.fullmatch(r"/api/suggestions/([1-9]\d{0,17})/decision", path)
+    if suggestion and method == "POST":
         from insights import Insights
-        require_fields(data,('decision',),('note',))
-        return Insights(service.db,service.owner).decide(int(suggestion[1]),data['decision'],data.get('note'))
-    if path == '/api/operations' and method=='GET':
+
+        require_fields(data, ("decision",), ("note",))
+        return Insights(service.db, service.owner).decide(int(suggestion[1]), data["decision"], data.get("note"))
+    if path == "/api/operations" and method == "GET":
         from maintenance import operations_report
-        return operations_report(service.db,service.owner)
-    if path == '/api/operations/run' and method=='POST':
+
+        return operations_report(service.db, service.owner)
+    if path == "/api/operations/run" and method == "POST":
         from maintenance import request_run
-        require_fields(data,('kind',))
-        return request_run(service.db,service.owner,data['kind'])
-    backup_verify=re.fullmatch(r'/api/backups/([1-9]\d{0,17})/verify',path)
-    if backup_verify and method=='GET':
+
+        require_fields(data, ("kind",))
+        return request_run(service.db, service.owner, data["kind"])
+    backup_verify = re.fullmatch(r"/api/backups/([1-9]\d{0,17})/verify", path)
+    if backup_verify and method == "GET":
         from maintenance import verify_backup
-        return verify_backup(service.db,service.owner,int(backup_verify[1]))
+
+        return verify_backup(service.db, service.owner, int(backup_verify[1]))
     commercial = re.fullmatch(r"/api/leads/([1-9]\d{0,17})/(pricing|reply-analysis)", path)
-    if commercial and method == 'POST':
-        from sales_analysis import pricing, analyze_reply
-        return (pricing if commercial[2]=='pricing' else analyze_reply)(service,int(commercial[1]),data)
+    if commercial and method == "POST":
+        from sales_analysis import analyze_reply, pricing
+
+        return (pricing if commercial[2] == "pricing" else analyze_reply)(service, int(commercial[1]), data)
     sales_match = re.fullmatch(r"/api/leads/([1-9]\d{0,17})/sales", path)
     if sales_match and method == "POST":
         from sales import prepare
+
         return prepare(service, int(sales_match[1]), data)
     from quality import Quality
+
     quality = Quality(service.db, service.owner)
     if path == "/api/quality" and method == "GET":
         return quality.report()
@@ -144,8 +183,9 @@ def route(service, method, path, query, data):
     if path == "/api/reviews" and method == "GET":
         if set(query) - {"limit", "offset", "status"}:
             raise ValueError("Неизвестный фильтр проверки.")
-        return quality.reviews(limit=int(query.get("limit", 20)), offset=int(query.get("offset", 0)),
-                               status=query.get("status", "pending"))
+        return quality.reviews(
+            limit=int(query.get("limit", 20)), offset=int(query.get("offset", 0)), status=query.get("status", "pending")
+        )
     review = re.fullmatch(r"/api/reviews/([1-9]\d{0,17})(?:/(decision))?", path)
     if review:
         if method == "GET" and review[2] is None:
@@ -160,23 +200,45 @@ def route(service, method, path, query, data):
         heartbeats = [dict(row) for row in service.db.execute("SELECT * FROM core_heartbeat")]
         for item in heartbeats:
             item["age_seconds"] = max(0, now - item["updated_at"])
-        return {"heartbeats": heartbeats, "sources": [dict(row) for row in service.db.execute(
-            "SELECT username,status,attempts,due_at,last_success FROM source_health ORDER BY username")],
+        return {
+            "heartbeats": heartbeats,
+            "sources": [
+                dict(row)
+                for row in service.db.execute(
+                    "SELECT username,status,attempts,due_at,last_success FROM source_health ORDER BY username"
+                )
+            ],
             "processing": dict(service.db.execute("SELECT status,count(*) FROM processing_queue GROUP BY status")),
-            "notifications": dict(service.db.execute("SELECT status,count(*) FROM notification_queue WHERE recipient=? GROUP BY status", (service.owner,))),
-            "events": [dict(row) for row in service.db.execute('SELECT created_at,component,item_id,error FROM core_events ORDER BY id DESC LIMIT 50')]}
-    if path == '/api/runtime/stop' and method == 'POST':
-        require_fields(data, ('confirmed',))
-        if data['confirmed'] is not True:
-            raise ValueError('Подтверди сохранение очередей и остановку мониторинга.')
+            "notifications": dict(
+                service.db.execute(
+                    "SELECT status,count(*) FROM notification_queue WHERE recipient=? GROUP BY status", (service.owner,)
+                )
+            ),
+            "events": [
+                dict(row)
+                for row in service.db.execute(
+                    "SELECT created_at,component,item_id,error FROM core_events ORDER BY id DESC LIMIT 50"
+                )
+            ],
+        }
+    if path == "/api/runtime/stop" and method == "POST":
+        require_fields(data, ("confirmed",))
+        if data["confirmed"] is not True:
+            raise ValueError("Подтверди сохранение очередей и остановку мониторинга.")
         from reliability import heartbeat
-        heartbeat(service.db, 'stop_request')
-        return {'requested':True, 'message':'Запрошена штатная остановка. Дождись состояния stopped; очереди сохраняются.'}
-    if path == '/api/backups' and method == 'GET':
-        database_path = Path(service.db.execute('PRAGMA database_list').fetchone()[2])
-        folder = database_path.parent / 'backups'
-        return [{'name':p.name,'size':p.stat().st_size,'modified_at':p.stat().st_mtime}
-                for p in sorted(folder.glob('*.sqlite3'),key=lambda p:p.stat().st_mtime,reverse=True)[:100]]
+
+        heartbeat(service.db, "stop_request")
+        return {
+            "requested": True,
+            "message": "Запрошена штатная остановка. Дождись состояния stopped; очереди сохраняются.",
+        }
+    if path == "/api/backups" and method == "GET":
+        database_path = Path(service.db.execute("PRAGMA database_list").fetchone()[2])
+        folder = database_path.parent / "backups"
+        return [
+            {"name": p.name, "size": p.stat().st_size, "modified_at": p.stat().st_mtime}
+            for p in sorted(folder.glob("*.sqlite3"), key=lambda p: p.stat().st_mtime, reverse=True)[:100]
+        ]
     if path == "/api/stats" and method == "GET":
         return service.statistics()
     if path == "/api/retention" and method == "GET":
@@ -192,8 +254,10 @@ def route(service, method, path, query, data):
         return service.reminders(query.get("due_before"))
     if path in {"/api/export.csv", "/api/export.xlsx"} and method == "GET":
         file_format = path.rsplit(".", 1)[-1]
-        content_type = "text/csv; charset=utf-8" if file_format == "csv" else (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        content_type = (
+            "text/csv; charset=utf-8"
+            if file_format == "csv"
+            else ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         )
         return content_type, export(service, file_format, **filters(query, pagination=False))
     if path == "/api/leads":
@@ -250,9 +314,11 @@ def route(service, method, path, query, data):
                 return {"reminder_id": service.add_reminder(entity_id, data["text"], data["due_at"])}
             if action == "conversations":
                 require_fields(data, ("text", "direction"), ("occurred_at",))
-                return {"conversation_id": service.add_conversation(
-                    entity_id, data["text"], data["direction"], data.get("occurred_at")
-                )}
+                return {
+                    "conversation_id": service.add_conversation(
+                        entity_id, data["text"], data["direction"], data.get("occurred_at")
+                    )
+                }
             if action == "feedback":
                 require_fields(data, ("decision",), ("reason",))
                 return {"feedback_id": quality.feedback(entity_id, data["decision"], data.get("reason"))}
@@ -294,17 +360,38 @@ STATIC_FILES = {
 
 # Публичные файлы импортированного сайта. Служебные каталоги и база не обслуживаются.
 for public_file in (
-    'style.css', 'reference.css', 'film.css', 'ui.css', 'cases.css', 'polish.css',
-    'app.js', 'reference.js', 'film.js', 'locale.js', 'polish.js', 'projects.js',
-    'case-previews.js', 'intake.js', 'intake.css',
-    'assets/aether-residence.jpg', 'assets/byte-logo-dark.png', 'assets/reference-visuals.png',
-    'fonts/Onest-Variable.ttf', 'fonts/Oswald-Variable.ttf',
-    'fonts/GolosText-Variable.ttf', 'fonts/Anton-Regular.ttf',
+    "style.css",
+    "reference.css",
+    "film.css",
+    "ui.css",
+    "cases.css",
+    "polish.css",
+    "app.js",
+    "reference.js",
+    "film.js",
+    "locale.js",
+    "polish.js",
+    "projects.js",
+    "case-previews.js",
+    "intake.js",
+    "intake.css",
+    "assets/aether-residence.jpg",
+    "assets/byte-logo-dark.png",
+    "assets/reference-visuals.png",
+    "fonts/Onest-Variable.ttf",
+    "fonts/Oswald-Variable.ttf",
+    "fonts/GolosText-Variable.ttf",
+    "fonts/Anton-Regular.ttf",
 ):
     suffix = Path(public_file).suffix
-    content_type = {'.css':'text/css; charset=utf-8', '.js':'application/javascript; charset=utf-8',
-                    '.jpg':'image/jpeg', '.png':'image/png', '.ttf':'font/ttf'}[suffix]
-    STATIC_FILES['/'+public_file] = ('studio/'+public_file, content_type)
+    content_type = {
+        ".css": "text/css; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".jpg": "image/jpeg",
+        ".png": "image/png",
+        ".ttf": "font/ttf",
+    }[suffix]
+    STATIC_FILES["/" + public_file] = ("studio/" + public_file, content_type)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -334,11 +421,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(content)))
                 self.send_header("X-Content-Type-Options", "nosniff")
-                policy = "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
-                if not urlsplit(self.path).path.startswith('/crm'):
+                policy = (
+                    "default-src 'self'; style-src 'self'; script-src 'self'; connect-src"
+                    " 'self'; base-uri 'none'; frame-ancestors 'none'"
+                )
+                if not urlsplit(self.path).path.startswith("/crm"):
                     # Архив использует inline CSS-атрибуты для превью и data-SVG для текстуры.
                     # Скрипты, таблицы стилей и шрифты по-прежнему только локальные.
-                    policy += "; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'self'"
+                    policy += (
+                        "; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'self'"
+                    )
                 self.send_header("Content-Security-Policy", policy)
                 self.end_headers()
                 self.wfile.write(content)
@@ -352,29 +444,55 @@ class Handler(BaseHTTPRequestHandler):
                 if self.headers.get_content_type() != "application/json":
                     raise ValueError("Используй application/json.")
                 body = json.loads(self.rfile.read(length))
-            if method == 'POST' and self.path == '/public/intake':
+            if method == "POST" and self.path == "/public/intake":
                 if origin != f"http://127.0.0.1:{self.server.server_port}":
                     raise Unauthorized()
-                result = self.server.app.intake(body, self.client_address[0])
-                content_type, content = 'application/json; charset=utf-8', json.dumps(result).encode()
+                result = self.server.app.intake(
+                    body,
+                    client_ip(
+                        self.client_address[0],
+                        self.headers.get("X-Forwarded-For"),
+                        self.server.app.trusted_proxies,
+                    ),
+                )
+                content_type, content = "application/json; charset=utf-8", json.dumps(result).encode()
             else:
                 content_type, content = self.server.app.request(
-                    method, self.path, self.headers.get("Authorization"), body,
+                    method,
+                    self.path,
+                    self.headers.get("Authorization"),
+                    body,
                     self.headers.get("Idempotency-Key"),
                 )
         except Unauthorized:
             status, content_type, content = 401, "application/json; charset=utf-8", b'{"error":"Unauthorized"}'
         except NotFound as error:
-            status, content_type, content = 404, "application/json; charset=utf-8", json.dumps({"error": str(error)}, ensure_ascii=False).encode()
+            status, content_type, content = (
+                404,
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(error)}, ensure_ascii=False).encode(),
+            )
         except Conflict as error:
-            status, content_type, content = 409, "application/json; charset=utf-8", json.dumps({"error": str(error)}, ensure_ascii=False).encode()
+            status, content_type, content = (
+                409,
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(error)}, ensure_ascii=False).encode(),
+            )
         except (ValueError, TypeError, KeyError) as error:
             from web_intake import RateLimited
+
             status = 429 if isinstance(error, RateLimited) else 400
-            content_type, content = "application/json; charset=utf-8", json.dumps({"error": str(error)}, ensure_ascii=False).encode()
+            content_type, content = (
+                "application/json; charset=utf-8",
+                json.dumps({"error": str(error)}, ensure_ascii=False).encode(),
+            )
         except Exception:
             logging.exception("Внутренняя ошибка CRM API.")
-            status, content_type, content = 500, "application/json; charset=utf-8", '{"error":"Внутренняя ошибка"}'.encode()
+            status, content_type, content = (
+                500,
+                "application/json; charset=utf-8",
+                '{"error":"Внутренняя ошибка"}'.encode(),
+            )
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
@@ -388,9 +506,10 @@ def main():
     parser = argparse.ArgumentParser(description="Локальный CRM API Byte Studio")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--database", default=str(MONITOR_DB))
+    parser.add_argument("--trusted-proxies", default=os.environ.get("TRUSTED_PROXIES", ""))
     args = parser.parse_args()
     owner = int(os.environ["CRM_OWNER_ID"]) if os.environ.get("CRM_OWNER_ID") else recipient_id(None)
-    app = CRMApp(args.database, owner, os.environ.get("CRM_API_TOKEN", ""))
+    app = CRMApp(args.database, owner, os.environ.get("CRM_API_TOKEN", ""), args.trusted_proxies)
     with closing(open_database(args.database)) as db:
         migrate(db)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)

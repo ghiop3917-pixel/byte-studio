@@ -1,10 +1,10 @@
 import argparse
 import asyncio
 import json
+import logging
 import os
 import re
 import sqlite3
-import logging
 from contextlib import closing
 from getpass import getpass
 from pathlib import Path
@@ -15,7 +15,7 @@ from telethon.sessions import MemorySession
 
 from bot import Telegram, TelegramError
 from bot_menu import MONITOR_DB, run_menu, saved_directions
-
+from session_config import secure_session, session_path
 
 SOURCES = (
     "predprinimateli_msk",
@@ -52,11 +52,10 @@ async def resolve_group(client, username):
     return group
 
 
-def open_session(path):
+def open_session(path, *, explicit=None):
+    path = secure_session(path, explicit=explicit)
     with closing(sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)) as db:
-        row = db.execute(
-            "SELECT dc_id, server_address, port, auth_key FROM sessions"
-        ).fetchone()
+        row = db.execute("SELECT dc_id, server_address, port, auth_key FROM sessions").fetchone()
     if not row or not row[3]:
         raise SystemExit("Сначала подключи аккаунт через connect.cmd.")
     session = MemorySession()
@@ -70,10 +69,15 @@ async def monitor(args):
     api_hash = os.environ.pop("TELEGRAM_LEADS_API_HASH", "") or getpass("API hash: ").strip()
     if not api_id.isdecimal() or not re.fullmatch(r"[0-9a-fA-F]{32}", api_hash):
         raise SystemExit("Проверь API ID и API hash.")
-    session_path = Path(args.session).expanduser().resolve()
+    session_file = Path(args.session).expanduser().resolve() if args.session else session_path()
     client = TelegramClient(
-        open_session(session_path), int(api_id), api_hash,
-        flood_sleep_threshold=0, connection_retries=3, request_retries=2, timeout=10,
+        open_session(session_file, explicit=True if args.session else None),
+        int(api_id),
+        api_hash,
+        flood_sleep_threshold=0,
+        connection_retries=3,
+        request_retries=2,
+        timeout=10,
     )
     try:
         await asyncio.wait_for(client.connect(), timeout=30)
@@ -95,10 +99,19 @@ async def monitor(args):
         telegram = Telegram(token)
         from reliability import migrate, open_database
         from telegram_runtime import run
+
         with closing(open_database(MONITOR_DB)) as db:
             migrate(db)
-            await run(client, db, telegram, source_names, resolve_group,
-                      lambda: recipient_id(owner.id), saved_directions, run_menu)
+            await run(
+                client,
+                db,
+                telegram,
+                source_names,
+                resolve_group,
+                lambda: recipient_id(owner.id),
+                saved_directions,
+                run_menu,
+            )
     finally:
         await client.disconnect()
 
@@ -107,7 +120,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="Мониторинг заявок в группах Telegram")
     parser.add_argument("--check", action="store_true", help="Проверить чтение без отправки сообщений")
-    parser.add_argument("--session", default=str(Path.home() / "AppData/Local/TelegramLeads/monitor.session"))
+    parser.add_argument("--session")
     try:
         asyncio.run(monitor(parser.parse_args()))
     except TelegramError as error:

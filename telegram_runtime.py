@@ -2,14 +2,23 @@
 
 import asyncio
 import json
-import time
 import sqlite3
+import time
 
 from telethon import errors, utils
 
 from reliability import (
-    MAX_ATTEMPTS, acquire_lock, claim, event, finish_notification, heartbeat,
-    ingest, process_one, recover, renew_lock, retry,
+    MAX_ATTEMPTS,
+    acquire_lock,
+    claim,
+    event,
+    finish_notification,
+    heartbeat,
+    ingest,
+    process_one,
+    recover,
+    renew_lock,
+    retry,
 )
 
 
@@ -26,9 +35,11 @@ def source_error(db, name, error):
     event(db, "source", name, type(error).__name__)
     if flood:
         # Общий лимит метода учитывается также для остальных источников.
-        method = "resolve" if getattr(error, "request", None) and (
-            "ResolveUsername" in type(error.request).__name__
-        ) else "history"
+        method = (
+            "resolve"
+            if getattr(error, "request", None) and ("ResolveUsername" in type(error.request).__name__)
+            else "history"
+        )
         heartbeat(db, f"cooldown:{method}", str(time.time() + delay))
 
 
@@ -41,14 +52,22 @@ def telegram_message(group, message):
     sender = message.sender
     name = " ".join(filter(None, (getattr(sender, "first_name", None), getattr(sender, "last_name", None))))
     return {
-        "chat": {"id": utils.get_peer_id(group), "type": "supergroup",
-                 "title": group.title, "username": group.username},
-        "message_id": message.id, "text": message.raw_text or "",
+        "chat": {
+            "id": utils.get_peer_id(group),
+            "type": "supergroup",
+            "title": group.title,
+            "username": group.username,
+        },
+        "message_id": message.id,
+        "text": message.raw_text or "",
         "date": message.date.isoformat() if message.date else None,
         "media_type": type(message.media).__name__ if message.media else None,
-        "from": {"id": message.sender_id, "name": name or getattr(sender, "title", None),
-                 "username": getattr(sender, "username", None) or "",
-                 "is_bot": getattr(sender, "bot", False)},
+        "from": {
+            "id": message.sender_id,
+            "name": name or getattr(sender, "title", None),
+            "username": getattr(sender, "username", None) or "",
+            "is_bot": getattr(sender, "bot", False),
+        },
     }
 
 
@@ -74,15 +93,23 @@ async def source_loop(client, db, sources, resolve, recipient, groups):
             "SELECT * FROM source_health WHERE status != 'failed' AND due_at<=? ORDER BY due_at,username",
             (time.time(),),
         ).fetchall()
-        selected = next((row for row in rows if row["username"] in sources() and
-                         time.time() >= cooldown(db, "history") and
-                         (row["username"] in groups or time.time() >= cooldown(db, "resolve"))), None)
+        selected = next(
+            (
+                row
+                for row in rows
+                if row["username"] in sources()
+                and time.time() >= cooldown(db, "history")
+                and (row["username"] in groups or time.time() >= cooldown(db, "resolve"))
+            ),
+            None,
+        )
         if selected is None:
             await asyncio.sleep(1)
             continue
         name = selected["username"]
         try:
-            async def fetch():
+
+            async def fetch(name=name):
                 if not client.is_connected():
                     await client.connect()
                 if name not in groups:
@@ -92,7 +119,8 @@ async def source_loop(client, db, sources, resolve, recipient, groups):
             chat_id = await asyncio.wait_for(fetch(), timeout=45)
             db.execute(
                 "UPDATE source_health SET status='healthy',attempts=0,due_at=?,chat_id=?,"
-                "last_success=?,error=NULL WHERE username=?", (time.time() + 20, chat_id, time.time(), name),
+                "last_success=?,error=NULL WHERE username=?",
+                (time.time() + 20, chat_id, time.time(), name),
             )
         except (errors.RPCError, OSError, asyncio.TimeoutError, ValueError) as error:
             source_error(db, name, error)
@@ -114,16 +142,17 @@ async def notification_loop(db, telegram, directions):
         job = claim(db, "notification_queue")
         if job is not None:
             from delivery_filter import delivery_decision, suppress_notification
+
             try:
-                allowed, reason = delivery_decision(db, job, directions(job['recipient']))
+                allowed, reason = delivery_decision(db, job, directions(job["recipient"]))
             except Exception as error:
-                retry(db,'notification_queue',job,'FilterError:'+type(error).__name__)
-                heartbeat(db,'notifications')
+                retry(db, "notification_queue", job, "FilterError:" + type(error).__name__)
+                heartbeat(db, "notifications")
                 await asyncio.sleep(1)
                 continue
             if not allowed:
                 suppress_notification(db, job, reason)
-                heartbeat(db,'notifications')
+                heartbeat(db, "notifications")
                 await asyncio.sleep(1)
                 continue
             # Транзакция завершена до первого сетевого запроса.
@@ -155,30 +184,33 @@ async def watch(db, lock_token, groups, tasks):
 
 async def maintenance_loop(db, recipient):
     from maintenance import run_tick
-    database = db.execute('PRAGMA database_list').fetchone()[2]
+
+    database = db.execute("PRAGMA database_list").fetchone()[2]
     failures = 0
     paused_at = None
     while True:
         if failures >= 3:
-            resume = db.execute('SELECT updated_at FROM core_heartbeat WHERE component=?',(f'maintenance_resume:{recipient()}',)).fetchone()
-            if resume and resume['updated_at'] > paused_at:
+            resume = db.execute(
+                "SELECT updated_at FROM core_heartbeat WHERE component=?", (f"maintenance_resume:{recipient()}",)
+            ).fetchone()
+            if resume and resume["updated_at"] > paused_at:
                 failures = 0
             else:
-                heartbeat(db,'maintenance','paused_after_errors')
+                heartbeat(db, "maintenance", "paused_after_errors")
                 await asyncio.sleep(60)
                 continue
         try:
-            result = await asyncio.to_thread(run_tick,database,recipient())
+            result = await asyncio.to_thread(run_tick, database, recipient())
             failures = 0
-            heartbeat(db,'maintenance',json.dumps(result or {'status':'idle'}))
+            heartbeat(db, "maintenance", json.dumps(result or {"status": "idle"}))
             delay = 5 if result else 30
-        except (sqlite3.Error,OSError,ValueError,RuntimeError) as error:
+        except (sqlite3.Error, OSError, ValueError, RuntimeError) as error:
             failures += 1
             paused_at = time.time()
-            event(db,'maintenance','scheduler',type(error).__name__)
-            heartbeat(db,'maintenance','attention')
+            event(db, "maintenance", "scheduler", type(error).__name__)
+            heartbeat(db, "maintenance", "attention")
             # Обслуживание не останавливает сбор сообщений; после 3 сбоев — длинная пауза.
-            delay = min(60*2**min(failures,6),3600)
+            delay = min(60 * 2 ** min(failures, 6), 3600)
         await asyncio.sleep(delay)
 
 

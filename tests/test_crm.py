@@ -1,20 +1,18 @@
 import csv
 import json
-import sqlite3
 import tempfile
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO, StringIO
 from pathlib import Path
-from http.client import HTTPConnection
-from http.server import ThreadingHTTPServer
-from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
+from http_fakes import HTTPConnection, ThreadingHTTPServer
 from openpyxl import load_workbook
 
-from crm import CRM, Conflict, NotFound, STATUSES
+from crm import CRM, STATUSES, Conflict, NotFound
 from crm_api import CRMApp, Handler, Unauthorized
 from crm_export import export
 from reliability import ingest, migrate, open_database, process_one
@@ -34,7 +32,14 @@ class CRMTests(unittest.TestCase):
 
     def test_card_contains_nullable_analysis_fields(self):
         lead = self.lead(original_text="Полный текст")
-        for key in ("score", "confirmed_budget", "estimated_budget_min", "recommended_price", "minimum_price", "desired_price"):
+        for key in (
+            "score",
+            "confirmed_budget",
+            "estimated_budget_min",
+            "recommended_price",
+            "minimum_price",
+            "desired_price",
+        ):
             self.assertIsNone(lead[key])
         self.assertEqual(lead["original_text"], "Полный текст")
         self.assertEqual(lead["status"], "new")
@@ -43,7 +48,9 @@ class CRMTests(unittest.TestCase):
     def test_telegram_pipeline_fills_crm_and_keeps_outbox(self):
         message = {
             "chat": {"id": -10022, "type": "supergroup", "title": "Чат", "username": "testgroup"},
-            "message_id": 11, "text": "Нужен сайт для кафе", "date": "2026-11-11T10:00:00+00:00",
+            "message_id": 11,
+            "text": "Нужен сайт для кафе",
+            "date": "2026-11-11T10:00:00+00:00",
             "from": {"id": 45, "name": "Заказчик", "username": "testclient"},
         }
         ingest(self.db, message, 9)
@@ -74,7 +81,8 @@ class CRMTests(unittest.TestCase):
         lead = self.lead(platform="telegram", source_key="-10022", source_name="Чат", external_message_id="11")
         message = {
             "chat": {"id": -10022, "type": "supergroup", "title": "Чат", "username": "testgroup"},
-            "message_id": 11, "text": "Нужен сайт для кафе",
+            "message_id": 11,
+            "text": "Нужен сайт для кафе",
             "from": {"id": 45, "name": "Заказчик", "username": "testclient"},
         }
         ingest(self.db, message, 9)
@@ -92,7 +100,7 @@ class CRMTests(unittest.TestCase):
         self.assertEqual(same["name"], "Иван")
         self.assertNotEqual(first["id"], other["id"])
         one = self.lead(client_id=first["id"])
-        two = self.lead(client_id=first["id"])
+        self.lead(client_id=first["id"])
         self.assertEqual(len(self.crm.client(first["id"])["projects"]), 2)
         with self.assertRaises(NotFound):
             CRM(self.db, 10).card(one["id"])
@@ -189,7 +197,9 @@ class CRMTests(unittest.TestCase):
         deal = self.crm.add_deal(lead["id"], {"title": "Сайт"})
         self.assertEqual(self.crm.statistics()["actual_revenue"], {})
         self.crm.update_deal(deal, {"status": "won", "actual_revenue": "30000.10", "currency": "RUB"})
-        self.crm.add_deal(lead["id"], {"title": "Поддержка", "status": "won", "actual_revenue": "10.20", "currency": "USD"})
+        self.crm.add_deal(
+            lead["id"], {"title": "Поддержка", "status": "won", "actual_revenue": "10.20", "currency": "USD"}
+        )
         self.assertEqual(self.crm.statistics()["actual_revenue"], {"RUB": "30000.10", "USD": "10.20"})
         self.assertEqual(self.crm.statistics()["won_deals"], 2)
         with self.assertRaises(ValueError):
@@ -338,8 +348,8 @@ class APITests(unittest.TestCase):
 
     def test_concurrent_repeated_requests_create_one_lead(self):
         def create():
-            return self.app.request("POST", "/api/leads", self.auth,
-                                    {"title": "Один проект"}, "concurrent_key_001")
+            return self.app.request("POST", "/api/leads", self.auth, {"title": "Один проект"}, "concurrent_key_001")
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(lambda _: create(), range(2)))
         self.assertEqual(results[0], results[1])
@@ -350,10 +360,15 @@ class APITests(unittest.TestCase):
         draft = self.request("POST", f"/api/leads/{lead['id']}/drafts", {"text": "Добрый день"}, "request_key_00000002")
         self.request("PATCH", f"/api/drafts/{draft['draft_id']}", {"status": "approved"}, "request_key_00000003")
         self.request("POST", f"/api/drafts/{draft['draft_id']}/sent", {"confirmed": True}, "request_key_00000004")
-        reminder = self.request("POST", f"/api/leads/{lead['id']}/reminders",
-                                {"text": "Напомнить", "due_at": "2026-12-01T00:00:00Z"}, "request_key_00000005")
-        self.request("PATCH", f"/api/reminders/{reminder['reminder_id']}",
-                     {"status": "completed"}, "request_key_00000006")
+        reminder = self.request(
+            "POST",
+            f"/api/leads/{lead['id']}/reminders",
+            {"text": "Напомнить", "due_at": "2026-12-01T00:00:00Z"},
+            "request_key_00000005",
+        )
+        self.request(
+            "PATCH", f"/api/reminders/{reminder['reminder_id']}", {"status": "completed"}, "request_key_00000006"
+        )
         self.assertEqual(self.request("GET", "/api/stats")["outgoing_messages"], 1)
         self.assertTrue(self.request("GET", "/api/export.csv").startswith(b"\xef\xbb\xbf"))
         self.assertTrue(self.request("GET", "/api/export.xlsx").startswith(b"PK"))
@@ -375,9 +390,16 @@ class APITests(unittest.TestCase):
             response = connection.getresponse()
             self.assertEqual(response.status, 401)
             response.read()
-            connection.request("POST", "/api/leads", body=json.dumps({"title": "HTTP-проект"}),
-                               headers={"Authorization": self.auth, "Content-Type": "application/json",
-                                        "Idempotency-Key": "http_request_00001"})
+            connection.request(
+                "POST",
+                "/api/leads",
+                body=json.dumps({"title": "HTTP-проект"}),
+                headers={
+                    "Authorization": self.auth,
+                    "Content-Type": "application/json",
+                    "Idempotency-Key": "http_request_00001",
+                },
+            )
             response = connection.getresponse()
             self.assertEqual(response.status, 200)
             self.assertEqual(json.loads(response.read())["title"], "HTTP-проект")
@@ -385,8 +407,9 @@ class APITests(unittest.TestCase):
             response = connection.getresponse()
             self.assertEqual(response.getheader("Cache-Control"), "no-store")
             self.assertEqual(json.loads(response.read())["total"], 1)
-            connection.request("GET", "/api/leads",
-                               headers={"Authorization": self.auth, "Origin": "https://untrusted.example"})
+            connection.request(
+                "GET", "/api/leads", headers={"Authorization": self.auth, "Origin": "https://untrusted.example"}
+            )
             response = connection.getresponse()
             self.assertEqual(response.status, 401)
             response.read()

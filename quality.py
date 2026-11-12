@@ -19,10 +19,23 @@ def store_analysis(db, raw, recipient, directions):
         return row["id"], json.loads(row["result"])
     result = analyze(raw["original_text"], directions, author)
     analysis_id = db.execute(
-        "INSERT INTO message_analyses(raw_id,recipient,version,context_key,intent,score,bucket,language,result,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (raw["id"], recipient, VERSION, context_key, result["intent"], result["score"], result["bucket"],
-         result["language"], json.dumps(result, ensure_ascii=False), time.time()),
+        (
+            "INSERT INTO message_analyses(raw_id,recipient,version,context_key,inte"
+            "nt,score,bucket,language,result,created_at) VALUES (?,?,?,?,?,?,?,?,?,"
+            "?)"
+        ),
+        (
+            raw["id"],
+            recipient,
+            VERSION,
+            context_key,
+            result["intent"],
+            result["score"],
+            result["bucket"],
+            result["language"],
+            json.dumps(result, ensure_ascii=False),
+            time.time(),
+        ),
     ).lastrowid
     return analysis_id, result
 
@@ -40,9 +53,13 @@ def apply_score(db, lead_id, result):
     lead = db.execute("SELECT score,score_origin FROM leads WHERE id=?", (lead_id,)).fetchone()
     if lead["score_origin"] != "manual":
         db.execute("UPDATE leads SET score=?,score_origin='rules' WHERE id=?", (result["score"], lead_id))
-    activity(db, lead_id, "analysis_completed",
-             {"version": result["version"], "intent": result["intent"], "score": result["score"],
-              "engine": "rules"}, "rules")
+    activity(
+        db,
+        lead_id,
+        "analysis_completed",
+        {"version": result["version"], "intent": result["intent"], "score": result["score"], "engine": "rules"},
+        "rules",
+    )
 
 
 class Quality:
@@ -55,13 +72,15 @@ class Quality:
             raise ValueError("Некорректная страница проверки.")
         if status not in {"pending", "approved", "rejected"}:
             raise ValueError("Неизвестный статус проверки.")
-        total = self.db.execute("SELECT count(*) FROM message_reviews WHERE recipient=? AND status=?",
-                                (self.recipient, status)).fetchone()[0]
+        total = self.db.execute(
+            "SELECT count(*) FROM message_reviews WHERE recipient=? AND status=?", (self.recipient, status)
+        ).fetchone()[0]
         rows = self.db.execute(
             "SELECT r.raw_id,r.status,m.source,m.original_text,m.url,a.score,a.intent "
             "FROM message_reviews r JOIN raw_messages m ON m.id=r.raw_id "
             "JOIN message_analyses a ON a.id=r.analysis_id WHERE r.recipient=? AND r.status=? "
-            "ORDER BY r.raw_id DESC LIMIT ? OFFSET ?", (self.recipient, status, limit, offset),
+            "ORDER BY r.raw_id DESC LIMIT ? OFFSET ?",
+            (self.recipient, status, limit, offset),
         )
         return {"total": total, "items": [dict(row) for row in rows]}
 
@@ -69,7 +88,8 @@ class Quality:
         row = self.db.execute(
             "SELECT r.*,m.source,m.original_text,m.url,a.result FROM message_reviews r "
             "JOIN raw_messages m ON m.id=r.raw_id JOIN message_analyses a ON a.id=r.analysis_id "
-            "WHERE r.raw_id=? AND r.recipient=?", (identifier(raw_id), self.recipient),
+            "WHERE r.raw_id=? AND r.recipient=?",
+            (identifier(raw_id), self.recipient),
         ).fetchone()
         if row is None:
             raise NotFound("Сообщение для проверки не найдено.")
@@ -89,15 +109,22 @@ class Quality:
                 "SELECT decision,reason FROM review_events WHERE raw_id=? AND recipient=? ORDER BY id DESC LIMIT 1",
                 (raw_id, self.recipient),
             ).fetchone()
-            if (current["status"] == status and current["reason"] == reason and latest
-                    and latest["decision"] == decision and latest["reason"] == reason):
+            if (
+                current["status"] == status
+                and current["reason"] == reason
+                and latest
+                and latest["decision"] == decision
+                and latest["reason"] == reason
+            ):
                 return current
             self.db.execute(
                 "UPDATE message_reviews SET status=?,reason=?,decided_at=? WHERE raw_id=? AND recipient=?",
                 (status, reason, time.time(), raw_id, self.recipient),
             )
-            self.db.execute("INSERT INTO review_events(raw_id,recipient,decision,reason,created_at) VALUES (?,?,?,?,?)",
-                            (raw_id, self.recipient, decision, reason, time.time()))
+            self.db.execute(
+                "INSERT INTO review_events(raw_id,recipient,decision,reason,created_at) VALUES (?,?,?,?,?)",
+                (raw_id, self.recipient, decision, reason, time.time()),
+            )
             if decision == "approved":
                 reprocess(self.db, raw_id)
         return self.review(raw_id)
@@ -121,28 +148,38 @@ class Quality:
             ids = service.members(lead_id)
             placeholders = ",".join("?" for _ in ids)
             for row in self.db.execute(
-                f"SELECT a.id,a.raw_id FROM message_analyses a JOIN lead_messages lm ON lm.raw_id=a.raw_id "
+                f"SELECT a.id,a.raw_id FROM message_analyses a JOIN lead_messages lm ON lm.raw_id=a.raw_id "  # noqa: S608 — список плейсхолдеров «?» по числу идентификаторов
                 f"AND lm.recipient=a.recipient WHERE lm.lead_id IN ({placeholders}) AND lm.recipient=? AND a.id="
                 "(SELECT max(id) FROM message_analyses WHERE raw_id=a.raw_id AND recipient=a.recipient)",
                 (*ids, self.recipient),
             ).fetchall():
                 status = "pending" if decision == "needs_review" else decision
-                review = self.db.execute("SELECT status,reason FROM message_reviews WHERE raw_id=? AND recipient=?",
-                                         (row["raw_id"], self.recipient)).fetchone()
+                review = self.db.execute(
+                    "SELECT status,reason FROM message_reviews WHERE raw_id=? AND recipient=?",
+                    (row["raw_id"], self.recipient),
+                ).fetchone()
                 if decision == "needs_review":
                     self.db.execute(
-                        "INSERT INTO message_reviews(raw_id,recipient,analysis_id,status,reason,decided_at) VALUES (?,?,?,?,?,?) "
-                        "ON CONFLICT(raw_id,recipient) DO UPDATE SET status=excluded.status,analysis_id=excluded.analysis_id,"
-                        "reason=excluded.reason,decided_at=excluded.decided_at",
+                        (
+                            "INSERT INTO message_reviews(raw_id,recipient,analysis_id,status,reason"
+                            ",decided_at) VALUES (?,?,?,?,?,?) ON CONFLICT(raw_id,recipient) DO UPD"
+                            "ATE SET status=excluded.status,analysis_id=excluded.analysis_id,reason"
+                            "=excluded.reason,decided_at=excluded.decided_at"
+                        ),
                         (row["raw_id"], self.recipient, row["id"], status, reason, time.time()),
                     )
                 elif review:
-                    self.db.execute("UPDATE message_reviews SET status=?,reason=?,decided_at=? WHERE raw_id=? AND recipient=?",
-                                    (status, reason, time.time(), row["raw_id"], self.recipient))
+                    self.db.execute(
+                        "UPDATE message_reviews SET status=?,reason=?,decided_at=? WHERE raw_id=? AND recipient=?",
+                        (status, reason, time.time(), row["raw_id"], self.recipient),
+                    )
                 if (review or decision == "needs_review") and (
-                        not review or review["status"] != status or review["reason"] != reason):
-                    self.db.execute("INSERT INTO review_events(raw_id,recipient,decision,reason,created_at) VALUES (?,?,?,?,?)",
-                                    (row["raw_id"], self.recipient, decision, reason, time.time()))
+                    not review or review["status"] != status or review["reason"] != reason
+                ):
+                    self.db.execute(
+                        "INSERT INTO review_events(raw_id,recipient,decision,reason,created_at) VALUES (?,?,?,?,?)",
+                        (row["raw_id"], self.recipient, decision, reason, time.time()),
+                    )
         return feedback_id
 
     def reanalyze_missing(self, limit=100):
@@ -164,17 +201,26 @@ class Quality:
         latest = self.db.execute(
             "SELECT f.decision,count(*) FROM lead_feedback f JOIN leads l ON l.id=f.lead_id "
             "WHERE l.recipient=? AND f.id=(SELECT max(id) FROM lead_feedback WHERE lead_id=f.lead_id) "
-            "GROUP BY f.decision", (self.recipient,),
+            "GROUP BY f.decision",
+            (self.recipient,),
         )
         labels = dict(latest)
         judged = labels.get("approved", 0) + labels.get("rejected", 0)
-        reviews = dict(self.db.execute(
-            "SELECT status,count(*) FROM message_reviews WHERE recipient=? GROUP BY status", (self.recipient,),
-        ))
+        reviews = dict(
+            self.db.execute(
+                "SELECT status,count(*) FROM message_reviews WHERE recipient=? GROUP BY status",
+                (self.recipient,),
+            )
+        )
         return {
-            "engine": "rules", "version": VERSION, "lead_feedback": labels, "reviews": reviews,
+            "engine": "rules",
+            "version": VERSION,
+            "lead_feedback": labels,
+            "reviews": reviews,
             "judged_leads": judged,
             "observed_approval_rate": labels.get("approved", 0) / judged if judged else None,
-            "recall": None, "recall_note": "Полноту нельзя измерить без размеченных пропущенных сообщений.",
-            "automatic_learning": False, "ai_requests": 0,
+            "recall": None,
+            "recall_note": "Полноту нельзя измерить без размеченных пропущенных сообщений.",
+            "automatic_learning": False,
+            "ai_requests": 0,
         }

@@ -1,14 +1,14 @@
 import json
+import tempfile
 import threading
 import unittest
-import tempfile
-from http.client import HTTPConnection
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import Mock
 
+from http_fakes import HTTPConnection, ThreadingHTTPServer
+
 from crm import CRM, NotFound
-from crm_api import Handler, CRMApp
+from crm_api import CRMApp, Handler
 from reliability import migrate, open_database
 from sales import prepare
 
@@ -24,7 +24,11 @@ class SalesTests(unittest.TestCase):
         self.db.close()
 
     def test_proposal_uses_only_supplied_price_and_timeline(self):
-        result = prepare(self.crm, self.lead, {"price": "45000", "currency": "RUB", "timeline": "После согласования", "deliverables": "Лендинг и форма"})
+        result = prepare(
+            self.crm,
+            self.lead,
+            {"price": "45000", "currency": "RUB", "timeline": "После согласования", "deliverables": "Лендинг и форма"},
+        )
         draft = self.crm.draft(result["draft_id"])
         self.assertIn("45000 RUB", draft["text"])
         self.assertIn("Лендинг и форма", draft["text"])
@@ -64,27 +68,27 @@ class SalesTests(unittest.TestCase):
 class WebHTTPTests(unittest.TestCase):
     def test_sales_api_idempotency_and_runtime(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / 'test.sqlite3'
+            path = Path(directory) / "test.sqlite3"
             db = open_database(path)
             migrate(db)
-            lead = CRM(db, 9).create({'title': 'Сайт'})['id']
+            lead = CRM(db, 9).create({"title": "Сайт"})["id"]
             db.close()
-            app = CRMApp(path, 9, 'x' * 40)
-            auth = 'Bearer ' + app.token
-            target = f'/api/leads/{lead}/sales'
-            first = app.request('POST', target, auth, {'kind': 'proposal'}, 'sales-test-request-1')
-            self.assertEqual(first, app.request('POST', target, auth, {'kind': 'proposal'}, 'sales-test-request-1'))
+            app = CRMApp(path, 9, "x" * 40)
+            auth = "Bearer " + app.token
+            target = f"/api/leads/{lead}/sales"
+            first = app.request("POST", target, auth, {"kind": "proposal"}, "sales-test-request-1")
+            self.assertEqual(first, app.request("POST", target, auth, {"kind": "proposal"}, "sales-test-request-1"))
             db = open_database(path)
-            self.assertEqual(db.execute('SELECT count(*) FROM drafts').fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT count(*) FROM drafts").fetchone()[0], 1)
             db.close()
-            result = json.loads(app.request('GET', '/api/runtime', auth)[1])
-            self.assertEqual(result['sources'], [])
-            self.assertEqual(result['notifications'], {})
+            result = json.loads(app.request("GET", "/api/runtime", auth)[1])
+            self.assertEqual(result["sources"], [])
+            self.assertEqual(result["notifications"], {})
 
     def test_static_allowlist_and_origin_protection(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         server.app = Mock()
-        server.app.request.return_value = ("application/json", b'{}')
+        server.app.request.return_value = ("application/json", b"{}")
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         conn = HTTPConnection("127.0.0.1", server.server_port)
@@ -95,7 +99,12 @@ class WebHTTPTests(unittest.TestCase):
                 self.assertEqual(response.status, 200, path)
                 self.assertTrue(response.getheader("Content-Security-Policy"))
                 self.assertTrue(response.read())
-            conn.request("POST", "/api/leads", body='{}', headers={"Origin": f"http://127.0.0.1:{server.server_port}", "Content-Type": "application/json"})
+            conn.request(
+                "POST",
+                "/api/leads",
+                body="{}",
+                headers={"Origin": f"http://127.0.0.1:{server.server_port}", "Content-Type": "application/json"},
+            )
             response = conn.getresponse()
             self.assertEqual(response.status, 200)
             response.read()

@@ -87,15 +87,22 @@ def migrate_crm(db, backup_required=True):
     ]
     columns = {
         "platform": "TEXT NOT NULL DEFAULT 'telegram'",
-        "original_text": "TEXT", "task_description": "TEXT",
-        "discovered_at": "REAL", "updated_at": "REAL",
+        "original_text": "TEXT",
+        "task_description": "TEXT",
+        "discovered_at": "REAL",
+        "updated_at": "REAL",
         "client_id": "INTEGER REFERENCES clients(id)",
         "status": "TEXT NOT NULL DEFAULT 'new'",
         "priority": "TEXT NOT NULL DEFAULT 'normal'",
         "score": "INTEGER CHECK(score IS NULL OR (score>=0 AND score<=100))",
-        "confirmed_budget": "TEXT", "estimated_budget_min": "TEXT", "estimated_budget_max": "TEXT",
-        "recommended_price": "TEXT", "minimum_price": "TEXT", "desired_price": "TEXT",
-        "currency": "TEXT", "estimated_timeline": "TEXT",
+        "confirmed_budget": "TEXT",
+        "estimated_budget_min": "TEXT",
+        "estimated_budget_max": "TEXT",
+        "recommended_price": "TEXT",
+        "minimum_price": "TEXT",
+        "desired_price": "TEXT",
+        "currency": "TEXT",
+        "estimated_timeline": "TEXT",
         "merged_into": "INTEGER REFERENCES leads(id)",
     }
     indexes = [
@@ -119,5 +126,6 @@ def migrate_crm(db, backup_required=True):
             db.execute(statement)
         # Старые краткие карточки остаются карточками с неизвестным оригиналом и датой.
         from crm import hydrate_legacy
+
         hydrate_legacy(db)
         db.execute("INSERT INTO core_migrations VALUES (2,?)", (time.time(),))

@@ -22,3 +22,9 @@ tmp*/
 source-expansion.json
 business-candidates.json
 .pytest_cache/
+
+# Локальные отчёты разработки
+.coverage*
+htmlcov/
+.ruff_cache/
+ruff-findings.json

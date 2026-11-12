@@ -49,13 +49,16 @@ def transaction(db, immediate=True):
 def migrate(db):
     # Резервная копия создаётся до первого изменения существующей схемы.
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='core_migrations'").fetchone():
-        from crm_migrations import migrate_crm
         from analysis_migrations import migrate_analysis
+        from crm_migrations import migrate_crm
+
         migrate_crm(db)
         migrate_analysis(db)
         from web_migrations import migrate_web
+
         migrate_web(db)
         from operations_migrations import migrate_operations
+
         migrate_operations(db)
         return
     path = Path(db.execute("PRAGMA database_list").fetchone()[2])
@@ -117,19 +120,25 @@ def migrate(db):
             db.execute(statement)
         db.execute("INSERT INTO core_migrations VALUES (1,?)", (time.time(),))
     from crm_migrations import migrate_crm
+
     migrate_crm(db, backup_required=False)
     from analysis_migrations import migrate_analysis
+
     migrate_analysis(db, backup_required=False)
     from web_migrations import migrate_web
+
     migrate_web(db, backup_required=False)
     from operations_migrations import migrate_operations
+
     migrate_operations(db, backup_required=False)
 
 
 def event(db, component, item_id, error):
     # Только тип/код ошибки. Токены и содержимое сетевых исключений не журналируются.
-    db.execute("INSERT INTO core_events(created_at,component,item_id,error) VALUES (?,?,?,?)",
-               (time.time(), component, str(item_id), error))
+    db.execute(
+        "INSERT INTO core_events(created_at,component,item_id,error) VALUES (?,?,?,?)",
+        (time.time(), component, str(item_id), error),
+    )
     logging.warning("%s, %s: %s", component, item_id, error)
 
 
@@ -170,8 +179,10 @@ def ingest(db, message, recipient):
     text = message.get("text") or message.get("caption") or ""
     author = message.get("from", {})
     chat = message["chat"]
-    language = "ru" if any("а" <= char.casefold() <= "я" for char in text) else (
-        "en" if any("a" <= char.casefold() <= "z" for char in text) else None
+    language = (
+        "ru"
+        if any("а" <= char.casefold() <= "я" for char in text)
+        else ("en" if any("a" <= char.casefold() <= "z" for char in text) else None)
     )
     payload = json.dumps({"message": message, "recipient": recipient}, ensure_ascii=False)
     with transaction(db):
@@ -180,12 +191,23 @@ def ingest(db, message, recipient):
                 chat_id,message_id,source,url,original_text,published_at,author_id,
                 author_name,language,received_at,payload) VALUES (?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(chat_id,message_id) DO NOTHING""",
-            (chat["id"], message["message_id"], chat.get("title", str(chat["id"])),
-             message_link(message), text, message.get("date"), author.get("id"),
-             author.get("name"), language, time.time(), payload),
+            (
+                chat["id"],
+                message["message_id"],
+                chat.get("title", str(chat["id"])),
+                message_link(message),
+                text,
+                message.get("date"),
+                author.get("id"),
+                author.get("name"),
+                language,
+                time.time(),
+                payload,
+            ),
         )
-        raw_id = db.execute("SELECT id FROM raw_messages WHERE chat_id=? AND message_id=?",
-                            (chat["id"], message["message_id"])).fetchone()["id"]
+        raw_id = db.execute(
+            "SELECT id FROM raw_messages WHERE chat_id=? AND message_id=?", (chat["id"], message["message_id"])
+        ).fetchone()["id"]
         db.execute("INSERT OR IGNORE INTO processing_queue(raw_id) VALUES (?)", (raw_id,))
         db.execute(
             "INSERT INTO cursors VALUES (?,?) ON CONFLICT(chat_id) DO UPDATE "
@@ -200,7 +222,8 @@ def recover(db):
     with transaction(db):
         db.execute(
             "UPDATE raw_messages SET status='pending' WHERE id IN "
-            "(SELECT raw_id FROM processing_queue WHERE status='processing' AND lease_until<?)", (now,)
+            "(SELECT raw_id FROM processing_queue WHERE status='processing' AND lease_until<?)",
+            (now,),
         )
         db.execute(
             "UPDATE processing_queue SET status=CASE WHEN attempts>=? THEN 'failed' ELSE 'pending' END,"
@@ -213,7 +236,8 @@ def recover(db):
         )
         db.execute(
             "UPDATE notification_queue SET status='ambiguous',token=NULL,lease_until=NULL,"
-            "error='delivery_interrupted' WHERE status='processing' AND lease_until<?", (now,)
+            "error='delivery_interrupted' WHERE status='processing' AND lease_until<?",
+            (now,),
         )
 
 
@@ -223,29 +247,32 @@ def claim(db, table):
     now = time.time()
     with transaction(db):
         row = db.execute(
-            f"SELECT * FROM {table} WHERE status IN ('pending','retry_wait') "
-            "AND due_at<=? AND attempts<? ORDER BY id LIMIT 1", (now, MAX_ATTEMPTS)
+            f"SELECT * FROM {table} WHERE status IN ('pending','retry_wait') "  # noqa: S608 — имя таблицы из белого списка
+            "AND due_at<=? AND attempts<? ORDER BY id LIMIT 1",
+            (now, MAX_ATTEMPTS),
         ).fetchone()
         if row is None:
             return None
         token = uuid.uuid4().hex
         db.execute(
-            f"UPDATE {table} SET status='processing',attempts=attempts+1,last_attempt=?,"
+            f"UPDATE {table} SET status='processing',attempts=attempts+1,last_attempt=?,"  # noqa: S608 — имя таблицы из белого списка
             "lease_until=?,token=? WHERE id=?",
             (now, now + LEASE_SECONDS, token, row["id"]),
         )
         if table == "processing_queue":
             db.execute("UPDATE raw_messages SET status='processing' WHERE id=?", (row["raw_id"],))
-        return db.execute(f"SELECT * FROM {table} WHERE id=?", (row["id"],)).fetchone()
+        return db.execute(f"SELECT * FROM {table} WHERE id=?", (row["id"],)).fetchone()  # noqa: S608 — имя таблицы из белого списка
 
 
 def retry(db, table, job, error, delay=0):
+    if table not in {"processing_queue", "notification_queue"}:
+        raise ValueError("Неизвестная очередь.")
     state = "failed" if job["attempts"] >= MAX_ATTEMPTS else "retry_wait"
     due = time.time() + max(delay, min(30 * 2 ** (job["attempts"] - 1), 3600))
     with transaction(db):
         updated = db.execute(
-            f"UPDATE {table} SET status=?,due_at=?,error=?,token=NULL,lease_until=NULL "
-            "WHERE id=? AND token=?", (state, due, error, job["id"], job["token"]),
+            f"UPDATE {table} SET status=?,due_at=?,error=?,token=NULL,lease_until=NULL WHERE id=? AND token=?",  # noqa: S608 — имя таблицы из белого списка
+            (state, due, error, job["id"], job["token"]),
         ).rowcount
         if not updated:
             return
@@ -277,21 +304,25 @@ def process_one(db, direction_loader):
             message = payload["message"]
             directions = direction_loader(recipient)
             from quality import apply_score, store_analysis, update_review
+
             analysis_id, analysis = store_analysis(db, raw, recipient, directions)
             update_review(db, raw["id"], recipient, analysis_id, analysis)
-            review = db.execute("SELECT * FROM message_reviews WHERE raw_id=? AND recipient=?",
-                                (raw["id"], recipient)).fetchone()
+            review = db.execute(
+                "SELECT * FROM message_reviews WHERE raw_id=? AND recipient=?", (raw["id"], recipient)
+            ).fetchone()
             approved = review is not None and review["status"] == "approved"
             rejected = review is not None and review["status"] == "rejected"
             categories = analysis["categories"]
             if approved and not categories:
-                previous = db.execute("SELECT result FROM message_analyses WHERE id=?",
-                                      (review["analysis_id"],)).fetchone()
+                previous = db.execute(
+                    "SELECT result FROM message_analyses WHERE id=?", (review["analysis_id"],)
+                ).fetchone()
                 categories = json.loads(previous["result"])["categories"]
                 analysis = {**analysis, "categories": categories}
             capture = NotificationCapture()
-            existing = db.execute("SELECT lead_id FROM lead_messages WHERE raw_id=? AND recipient=?",
-                                  (raw["id"], recipient)).fetchone()
+            existing = db.execute(
+                "SELECT lead_id FROM lead_messages WHERE raw_id=? AND recipient=?", (raw["id"], recipient)
+            ).fetchone()
             if existing is None:
                 existing = db.execute(
                     "SELECT lead_id FROM crm_message_keys WHERE owner_id=? AND platform='telegram' "
@@ -299,19 +330,32 @@ def process_one(db, direction_loader):
                     (recipient, str(raw["chat_id"]), str(raw["message_id"])),
                 ).fetchone()
                 if existing:
-                    db.execute("INSERT OR IGNORE INTO lead_messages VALUES (?,?,?)",
-                               (raw["id"], recipient, existing["lead_id"]))
+                    db.execute(
+                        "INSERT OR IGNORE INTO lead_messages VALUES (?,?,?)",
+                        (raw["id"], recipient, existing["lead_id"]),
+                    )
                     from crm import sync_telegram_lead
+
                     sync_telegram_lead(db, raw, recipient, existing["lead_id"], categories, {})
             if categories and not rejected and (approved or analysis["bucket"] == "lead") and existing is None:
-                handle_update(capture, db, {"message": message}, recipient, {raw["chat_id"]}, "",
-                              directions=directions, record_leads=True,
-                              identity=f"{raw['chat_id']}:{raw['message_id']}:{recipient}",
-                              manage_transaction=False, analysis=analysis)
+                handle_update(
+                    capture,
+                    db,
+                    {"message": message},
+                    recipient,
+                    {raw["chat_id"]},
+                    "",
+                    directions=directions,
+                    record_leads=True,
+                    identity=f"{raw['chat_id']}:{raw['message_id']}:{recipient}",
+                    manage_transaction=False,
+                    analysis=analysis,
+                )
                 if capture.payload:
                     lead_id = capture.payload["lead_id"]
                     db.execute("INSERT INTO lead_messages VALUES (?,?,?)", (raw["id"], recipient, lead_id))
                     from crm import sync_telegram_lead
+
                     sync_telegram_lead(db, raw, recipient, lead_id, categories, capture.payload)
                     apply_score(db, lead_id, analysis)
                     db.execute(
@@ -324,7 +368,8 @@ def process_one(db, direction_loader):
             db.execute("UPDATE raw_messages SET status='completed',result=? WHERE id=?", (result, raw["id"]))
             db.execute(
                 "UPDATE processing_queue SET status='completed',token=NULL,lease_until=NULL,error=NULL "
-                "WHERE id=? AND token=?", (job["id"], job["token"]),
+                "WHERE id=? AND token=?",
+                (job["id"], job["token"]),
             )
         return True
     except Exception as error:
@@ -348,8 +393,8 @@ def finish_notification(db, job, result=None, error=None):
             state = "ambiguous" if ambiguous else "failed"
             code = f"Telegram:{error.code}" if isinstance(error, TelegramError) else type(error).__name__
             db.execute(
-                "UPDATE notification_queue SET status=?,error=?,token=NULL,lease_until=NULL "
-                "WHERE id=? AND token=?", (state, code, job["id"], job["token"]),
+                "UPDATE notification_queue SET status=?,error=?,token=NULL,lease_until=NULL WHERE id=? AND token=?",
+                (state, code, job["id"], job["token"]),
             )
             event(db, "notification_queue", job["id"], code)
     if isinstance(error, TelegramError) and error.code == 429:
@@ -363,8 +408,9 @@ def reprocess(db, raw_id):
         queue = db.execute("SELECT status FROM processing_queue WHERE raw_id=?", (raw_id,)).fetchone()
         if queue["status"] == "processing":
             raise ValueError("Сообщение уже обрабатывается.")
-        db.execute("UPDATE processing_queue SET status='pending',attempts=0,due_at=0,error=NULL WHERE raw_id=?",
-                   (raw_id,))
+        db.execute(
+            "UPDATE processing_queue SET status='pending',attempts=0,due_at=0,error=NULL WHERE raw_id=?", (raw_id,)
+        )
         db.execute("UPDATE raw_messages SET status='pending' WHERE id=?", (raw_id,))
 
 
@@ -372,7 +418,8 @@ def retry_notification(db, notification_id):
     with transaction(db):
         updated = db.execute(
             "UPDATE notification_queue SET status='pending',attempts=0,due_at=0,error=NULL "
-            "WHERE id=? AND status IN ('ambiguous','failed')", (notification_id,)
+            "WHERE id=? AND status IN ('ambiguous','failed')",
+            (notification_id,),
         ).rowcount
         if not updated:
             raise ValueError("Уведомление не найдено или уже находится в очереди.")

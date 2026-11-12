@@ -9,16 +9,49 @@ from telethon import TelegramClient, errors, functions, types
 
 from bot import DIRECTIONS, classify, fingerprint
 from monitor import EXTRA_SOURCES, INACTIVE_SOURCES, open_session, source_names
-
+from session_config import session_path
 
 TARGET = 200
 CITIES = (
-    "Москва", "Петербург", "Казань", "Екатеринбург", "Новосибирск", "Краснодар",
-    "Ростов", "Самара", "Уфа", "Пермь", "Сочи", "Тюмень", "Воронеж", "Омск",
-    "Челябинск", "Красноярск", "Владивосток", "Иркутск", "Калининград", "Тула",
-    "Ярославль", "Тверь", "Нижний Новгород", "Волгоград", "Саратов", "Барнаул",
-    "Хабаровск", "Кемерово", "Ижевск", "Ставрополь", "Томск", "Липецк",
-    "Рязань", "Пенза", "Оренбург", "Киров", "Курск", "Брянск", "Мурманск",
+    "Москва",
+    "Петербург",
+    "Казань",
+    "Екатеринбург",
+    "Новосибирск",
+    "Краснодар",
+    "Ростов",
+    "Самара",
+    "Уфа",
+    "Пермь",
+    "Сочи",
+    "Тюмень",
+    "Воронеж",
+    "Омск",
+    "Челябинск",
+    "Красноярск",
+    "Владивосток",
+    "Иркутск",
+    "Калининград",
+    "Тула",
+    "Ярославль",
+    "Тверь",
+    "Нижний Новгород",
+    "Волгоград",
+    "Саратов",
+    "Барнаул",
+    "Хабаровск",
+    "Кемерово",
+    "Ижевск",
+    "Ставрополь",
+    "Томск",
+    "Липецк",
+    "Рязань",
+    "Пенза",
+    "Оренбург",
+    "Киров",
+    "Курск",
+    "Брянск",
+    "Мурманск",
 )
 
 
@@ -31,9 +64,15 @@ async def candidates(client):
     existing = json.loads(cache.read_text(encoding="utf-8")) if cache.exists() else {}
     seen = set()
     queries = [
-        "ищу подрядчика", "заказы разработка", "дизайн заказы чат",
-        "заказы сайты чат", "заказы монтаж чат", "чат заказчиков",
-        "поиск подрядчиков", "чат селлеров", "бизнес нетворкинг",
+        "ищу подрядчика",
+        "заказы разработка",
+        "дизайн заказы чат",
+        "заказы сайты чат",
+        "заказы монтаж чат",
+        "чат заказчиков",
+        "поиск подрядчиков",
+        "чат селлеров",
+        "бизнес нетворкинг",
     ]
     queries.extend(f"{topic} {city}" for city in CITIES for topic in ("бизнес чат", "предприниматели"))
     for name in existing:
@@ -54,8 +93,11 @@ async def active_group(client, name):
         return False
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     messages = [
-        m for m in await client.get_messages(group, limit=150)
-        if m.date >= cutoff and m.raw_text and isinstance(m.from_id, types.PeerUser)
+        m
+        for m in await client.get_messages(group, limit=150)
+        if m.date >= cutoff
+        and m.raw_text
+        and isinstance(m.from_id, types.PeerUser)
         and not getattr(m.sender, "bot", False)
     ]
     authors = {m.sender_id for m in messages}
@@ -70,25 +112,26 @@ async def add_group(client, group):
         await client(functions.channels.JoinChannelRequest(group))
     peer = await client.get_input_entity(group)
     notify = types.InputNotifyPeer(peer)
-    await client(functions.account.UpdateNotifySettingsRequest(
-        notify, types.InputPeerNotifySettings(mute_until=2147483647)
-    ))
+    await client(
+        functions.account.UpdateNotifySettingsRequest(notify, types.InputPeerNotifySettings(mute_until=2147483647))
+    )
     await client(functions.folders.EditPeerFoldersRequest([types.InputFolderPeer(peer, 1)]))
     settings = await client(functions.account.GetNotifySettingsRequest(notify))
     dialogs = await client(functions.messages.GetPeerDialogsRequest([types.InputDialogPeer(peer)]))
-    return (
-        bool(settings.mute_until and settings.mute_until > datetime.now(timezone.utc))
-        and any(getattr(dialog, "folder_id", None) == 1 for dialog in dialogs.dialogs)
+    return bool(settings.mute_until and settings.mute_until > datetime.now(timezone.utc)) and any(
+        getattr(dialog, "folder_id", None) == 1 for dialog in dialogs.dialogs
     )
 
 
-async def main():
+async def main(session=None):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
     logging.getLogger("telethon.network").setLevel(logging.WARNING)
-    path = Path.home() / "AppData/Local/TelegramLeads/monitor.session"
+    path = Path(session).expanduser().resolve() if session else session_path()
     client = TelegramClient(
-        open_session(path), int(os.environ.pop("TELEGRAM_LEADS_API_ID")),
-        os.environ.pop("TELEGRAM_LEADS_API_HASH"), flood_sleep_threshold=86400,
+        open_session(path, explicit=True if session else None),
+        int(os.environ.pop("TELEGRAM_LEADS_API_ID")),
+        os.environ.pop("TELEGRAM_LEADS_API_HASH"),
+        flood_sleep_threshold=86400,
     )
     await client.connect()
     producer = None
@@ -151,4 +194,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--session")
+    asyncio.run(main(parser.parse_args().session))

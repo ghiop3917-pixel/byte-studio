@@ -6,14 +6,23 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
+from telethon import errors
+
 from bot import TelegramError, classify
 from reliability import (
-    acquire_lock, claim, finish_notification, ingest, migrate, open_database,
-    process_one, recover, reprocess, retry, retry_notification,
+    acquire_lock,
+    claim,
+    finish_notification,
+    ingest,
+    migrate,
+    open_database,
+    process_one,
+    recover,
+    reprocess,
+    retry,
+    retry_notification,
 )
-from telegram_runtime import source_error
-from telegram_runtime import source_loop
-from telethon import errors
+from telegram_runtime import source_error, source_loop
 
 
 class CoreTests(unittest.TestCase):
@@ -22,7 +31,8 @@ class CoreTests(unittest.TestCase):
         migrate(self.db)
         self.message = {
             "chat": {"id": -100123, "type": "supergroup", "title": "Тест", "username": "testgroup"},
-            "message_id": 1, "text": "Нужен сайт для кафе",
+            "message_id": 1,
+            "text": "Нужен сайт для кафе",
             "date": "2026-11-11T10:00:00+00:00",
             "from": {"id": 3, "name": "Тест", "username": "testauthor"},
         }
@@ -31,7 +41,7 @@ class CoreTests(unittest.TestCase):
         self.db.close()
 
     def count(self, table):
-        return self.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+        return self.db.execute(f"SELECT count(*) FROM {table}").fetchone()[0]  # noqa: S608 — имя таблицы — константа в тестовых вызовах
 
     def lead(self):
         raw_id = ingest(self.db, self.message, 5)
@@ -61,7 +71,7 @@ class CoreTests(unittest.TestCase):
 
     def test_processing_recovers_expired_lease(self):
         ingest(self.db, self.message, 5)
-        job = claim(self.db, "processing_queue")
+        claim(self.db, "processing_queue")
         self.assertIsNone(claim(self.db, "processing_queue"))
         self.db.execute("UPDATE processing_queue SET lease_until=0")
         recover(self.db)
@@ -121,8 +131,12 @@ class CoreTests(unittest.TestCase):
     def test_failure_of_one_source_does_not_change_another(self):
         self.db.execute("INSERT INTO source_health(username) VALUES ('bad'),('good')")
         source_error(self.db, "bad", ValueError())
-        self.assertEqual(self.db.execute("SELECT status FROM source_health WHERE username='good'").fetchone()[0], "pending")
-        self.assertEqual(self.db.execute("SELECT status FROM source_health WHERE username='bad'").fetchone()[0], "retry_wait")
+        self.assertEqual(
+            self.db.execute("SELECT status FROM source_health WHERE username='good'").fetchone()[0], "pending"
+        )
+        self.assertEqual(
+            self.db.execute("SELECT status FROM source_health WHERE username='bad'").fetchone()[0], "retry_wait"
+        )
 
     def test_two_connections_claim_each_job_only_once(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -152,8 +166,9 @@ class CoreTests(unittest.TestCase):
             try:
                 process_one(db, lambda _: ("dev",))
                 self.assertEqual(db.execute("SELECT count(*) FROM notification_queue").fetchone()[0], 1)
-                self.assertEqual(db.execute("SELECT original_text FROM raw_messages").fetchone()[0],
-                                 self.message["text"])
+                self.assertEqual(
+                    db.execute("SELECT original_text FROM raw_messages").fetchone()[0], self.message["text"]
+                )
             finally:
                 db.close()
 
@@ -171,6 +186,7 @@ class CoreTests(unittest.TestCase):
             return object()
 
         sleeps = 0
+
         async def stop_after_cycle(delay):
             nonlocal sleeps
             sleeps += 1
@@ -187,8 +203,9 @@ class CoreTests(unittest.TestCase):
                 collect.assert_awaited_once()
 
         asyncio.run(scenario())
-        self.assertEqual(self.db.execute("SELECT status FROM source_health WHERE username='good'").fetchone()[0],
-                         "healthy")
+        self.assertEqual(
+            self.db.execute("SELECT status FROM source_health WHERE username='good'").fetchone()[0], "healthy"
+        )
 
     def test_migration_keeps_legacy_data_and_creates_backup(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -209,21 +226,39 @@ class CoreTests(unittest.TestCase):
 
     def test_required_classifier_cases(self):
         accepted = [
-            "Need a website for my bakery", "Looking for a developer to build a Telegram bot",
-            "Нужно мобильное приложение", "Нужна десктопная программа",
+            "Need a website for my bakery",
+            "Looking for a developer to build a Telegram bot",
+            "Нужно мобильное приложение",
+            "Нужна десктопная программа",
             "Мы до сих пор обрабатываем заявки вручную",
-            "Нужен сайт. Предлагаю обсудить стоимость", "Сайт перестал справляться с количеством заказов",
-            "We still handle leads manually", "Посоветуйте, кто может сделать удобную систему записи",
+            "Нужен сайт. Предлагаю обсудить стоимость",
+            "Сайт перестал справляться с количеством заказов",
+            "We still handle leads manually",
+            "Посоветуйте, кто может сделать удобную систему записи",
         ]
         for text in accepted:
             with self.subTest(text=text):
                 self.assertTrue(classify(text))
-        for text in ("Нужен сайт. Уже нашли исполнителя", "Need a website. Already found a developer",
-                     "Делаю сайты", "Нужен разработчик в штат"):
+        for text in (
+            "Нужен сайт. Уже нашли исполнителя",
+            "Need a website. Already found a developer",
+            "Делаю сайты",
+            "Нужен разработчик в штат",
+        ):
             self.assertFalse(classify(text))
 
     def test_existing_bot_commands_still_dispatch(self):
         from bot_menu import dispatch
+
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        database = Path(folder.name) / "monitor.sqlite3"
+        db = open_database(database)
+        migrate(db)
+        db.close()
+        scope = patch("bot_menu.MONITOR_DB", database)
+        scope.start()
+        self.addCleanup(scope.stop)
         api = Mock()
         for command in ("/start", "/menu", "/status", "/directions"):
             dispatch(api, {"message": {"chat": {"id": 5, "type": "private"}, "text": command}}, 5, 27)

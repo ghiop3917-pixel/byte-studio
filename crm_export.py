@@ -6,19 +6,34 @@ from io import BytesIO, StringIO
 from crm import STATUSES
 
 COLUMNS = {
-    "id": "ID", "title": "Задача", "platform": "Платформа", "status": "Статус",
-    "priority": "Приоритет", "original_text": "Оригинальное сообщение", "url": "Ссылка",
-    "discovered_at": "Дата обнаружения UTC", "client_id": "ID заказчика", "score": "Оценка",
-    "client_name": "Заказчик", "contact": "Контакт", "source": "Источник", "categories": "Категории",
-    "confirmed_budget": "Подтверждённый бюджет", "estimated_budget_min": "Предполагаемый бюджет от",
-    "estimated_budget_max": "Предполагаемый бюджет до", "recommended_price": "Рекомендуемая цена",
-    "minimum_price": "Минимальная цена", "desired_price": "Желаемая цена",
-    "currency": "Валюта", "estimated_timeline": "Предполагаемые сроки",
+    "id": "ID",
+    "title": "Задача",
+    "platform": "Платформа",
+    "status": "Статус",
+    "priority": "Приоритет",
+    "original_text": "Оригинальное сообщение",
+    "url": "Ссылка",
+    "discovered_at": "Дата обнаружения UTC",
+    "client_id": "ID заказчика",
+    "score": "Оценка",
+    "client_name": "Заказчик",
+    "contact": "Контакт",
+    "source": "Источник",
+    "categories": "Категории",
+    "confirmed_budget": "Подтверждённый бюджет",
+    "estimated_budget_min": "Предполагаемый бюджет от",
+    "estimated_budget_max": "Предполагаемый бюджет до",
+    "recommended_price": "Рекомендуемая цена",
+    "minimum_price": "Минимальная цена",
+    "desired_price": "Желаемая цена",
+    "currency": "Валюта",
+    "estimated_timeline": "Предполагаемые сроки",
 }
 
 
 def rows(service, filters):
     from datetime import datetime, timezone
+
     result = service.list_leads(limit=10000, **filters)
     if result["total"] > 10000:
         raise ValueError("Экспорт ограничен 10000 карточек. Уточни фильтры.")
@@ -38,13 +53,18 @@ def export(service, file_format, **filters):
         output = StringIO(newline="")
         writer = csv.writer(output)
         for row in rows(service, filters):
-            writer.writerow([
-                "'" + str(value) if str(value).lstrip().startswith(("=", "+", "-", "@", "\t", "\r", "\n"))
-                else value for value in row
-            ])
+            writer.writerow(
+                [
+                    "'" + str(value)
+                    if str(value).lstrip().startswith(("=", "+", "-", "@", "\t", "\r", "\n"))
+                    else value
+                    for value in row
+                ]
+            )
         return output.getvalue().encode("utf-8-sig")
     if file_format == "xlsx":
         from openpyxl import Workbook
+
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Лиды"
@@ -53,7 +73,9 @@ def export(service, file_format, **filters):
                 raise ValueError("Текст превышает лимит ячейки XLSX. Используй CSV.")
             row = [
                 "".join(char if ord(char) >= 32 or char in "\t\n\r" else "�" for char in value)
-                if isinstance(value, str) else value for value in row
+                if isinstance(value, str)
+                else value
+                for value in row
             ]
             sheet.append(row)
             for cell in sheet[sheet.max_row]:

@@ -3,7 +3,7 @@
 import json
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from difflib import SequenceMatcher
 from urllib.parse import urlsplit, urlunsplit
@@ -11,20 +11,38 @@ from urllib.parse import urlsplit, urlunsplit
 from reliability import transaction
 
 STATUSES = {
-    "new": "Новый", "analyzing": "Анализируется", "verified": "Проверен",
-    "promising": "Перспективный", "ready": "Готов к отклику",
-    "draft_prepared": "Черновик подготовлен", "outreach_sent": "Отклик отправлен",
-    "client_replied": "Клиент ответил", "negotiation": "Переговоры",
-    "proposal_sent": "КП отправлено", "awaiting_decision": "Ожидание решения",
-    "won": "Сделка заключена", "rejected": "Отказ", "archived": "Архив",
+    "new": "Новый",
+    "analyzing": "Анализируется",
+    "verified": "Проверен",
+    "promising": "Перспективный",
+    "ready": "Готов к отклику",
+    "draft_prepared": "Черновик подготовлен",
+    "outreach_sent": "Отклик отправлен",
+    "client_replied": "Клиент ответил",
+    "negotiation": "Переговоры",
+    "proposal_sent": "КП отправлено",
+    "awaiting_decision": "Ожидание решения",
+    "won": "Сделка заключена",
+    "rejected": "Отказ",
+    "archived": "Архив",
 }
 PRIORITIES = {"low", "normal", "high", "urgent"}
 MONEY_FIELDS = {
-    "confirmed_budget", "estimated_budget_min", "estimated_budget_max",
-    "recommended_price", "minimum_price", "desired_price",
+    "confirmed_budget",
+    "estimated_budget_min",
+    "estimated_budget_max",
+    "recommended_price",
+    "minimum_price",
+    "desired_price",
 }
 EDITABLE = MONEY_FIELDS | {
-    "title", "task_description", "priority", "score", "currency", "estimated_timeline", "client_id",
+    "title",
+    "task_description",
+    "priority",
+    "score",
+    "currency",
+    "estimated_timeline",
+    "client_id",
 }
 
 
@@ -94,10 +112,12 @@ def activity(db, lead_id, kind, details, actor="owner"):
 def source_record(db, platform, external_id, name, url=None):
     db.execute(
         "INSERT INTO sources(platform,external_id,name,url) VALUES (?,?,?,?) "
-        "ON CONFLICT(platform,external_id) DO NOTHING", (platform, external_id, name, url),
+        "ON CONFLICT(platform,external_id) DO NOTHING",
+        (platform, external_id, name, url),
     )
-    return db.execute("SELECT id FROM sources WHERE platform=? AND external_id=?",
-                      (platform, external_id)).fetchone()["id"]
+    return db.execute("SELECT id FROM sources WHERE platform=? AND external_id=?", (platform, external_id)).fetchone()[
+        "id"
+    ]
 
 
 def client_record(db, owner, platform, public_id, name=None, contact=None):
@@ -107,8 +127,10 @@ def client_record(db, owner, platform, public_id, name=None, contact=None):
             (owner, platform, public_id),
         ).fetchone()
         if existing:
-            db.execute("UPDATE clients SET name=COALESCE(name,?),contact=COALESCE(contact,?) WHERE id=?",
-                       (name, contact, existing["id"]))
+            db.execute(
+                "UPDATE clients SET name=COALESCE(name,?),contact=COALESCE(contact,?) WHERE id=?",
+                (name, contact, existing["id"]),
+            )
             return existing["id"]
     return db.execute(
         "INSERT INTO clients(owner_id,platform,public_id,name,contact,created_at) VALUES (?,?,?,?,?,?)",
@@ -146,8 +168,10 @@ def sync_telegram_lead(db, raw, recipient, lead_id, categories, notification):
         "SET raw_id=excluded.raw_id,publication_url=COALESCE(lead_sources.publication_url,excluded.publication_url)",
         (lead_id, source_id, raw["id"], raw["url"], str(raw["message_id"])),
     )
-    db.execute("INSERT OR IGNORE INTO crm_message_keys VALUES (?,?,?,?,?)",
-               (recipient, "telegram", str(raw["chat_id"]), str(raw["message_id"]), lead_id))
+    db.execute(
+        "INSERT OR IGNORE INTO crm_message_keys VALUES (?,?,?,?,?)",
+        (recipient, "telegram", str(raw["chat_id"]), str(raw["message_id"]), lead_id),
+    )
     for category in categories:
         db.execute("INSERT OR IGNORE INTO lead_categories VALUES (?,?)", (lead_id, category))
     occurred = raw["received_at"]
@@ -159,18 +183,25 @@ def sync_telegram_lead(db, raw, recipient, lead_id, categories, notification):
     db.execute(
         "INSERT OR IGNORE INTO conversations(lead_id,client_id,direction,text,occurred_at,provenance,"
         "external_key,created_at) VALUES (?,?,'incoming',?,?, 'telegram',?,?)",
-        (lead_id, client_id, raw["original_text"], occurred,
-         external_key, time.time()),
+        (lead_id, client_id, raw["original_text"], occurred, external_key, time.time()),
     )
     # Восстанавливается только действительно существовавший черновик карточки.
     from html import unescape
+
     draft = notification.get("text", "").partition("<b>Черновик отклика</b>\n")[2]
     if draft:
         now = time.time()
-        db.execute("INSERT INTO drafts(lead_id,text,created_at,updated_at) VALUES (?,?,?,?)",
-                   (lead_id, unescape(draft), now, now))
-    activity(db, lead_id, "lead_registered" if registered else "message_attached",
-             {"status": "new", "raw_id": raw["id"]} if registered else {"raw_id": raw["id"]}, "telegram")
+        db.execute(
+            "INSERT INTO drafts(lead_id,text,created_at,updated_at) VALUES (?,?,?,?)",
+            (lead_id, unescape(draft), now, now),
+        )
+    activity(
+        db,
+        lead_id,
+        "lead_registered" if registered else "message_attached",
+        {"status": "new", "raw_id": raw["id"]} if registered else {"raw_id": raw["id"]},
+        "telegram",
+    )
 
 
 def hydrate_legacy(db):
@@ -180,11 +211,18 @@ def hydrate_legacy(db):
             (lead["id"],),
         ).fetchone()
         if linked:
-            queued = db.execute("SELECT payload FROM notification_queue WHERE lead_id=? LIMIT 1",
-                                (lead["id"],)).fetchone()
+            queued = db.execute(
+                "SELECT payload FROM notification_queue WHERE lead_id=? LIMIT 1", (lead["id"],)
+            ).fetchone()
             result = json.loads(linked["result"]) if linked["result"] else {}
-            sync_telegram_lead(db, linked, lead["recipient"], lead["id"], result.get("categories", []),
-                               json.loads(queued["payload"]) if queued else {})
+            sync_telegram_lead(
+                db,
+                linked,
+                lead["recipient"],
+                lead["id"],
+                result.get("categories", []),
+                json.loads(queued["payload"]) if queued else {},
+            )
         else:
             source_id = source_record(db, "telegram", f"legacy:{lead['id']}", lead["source"])
             db.execute(
@@ -201,8 +239,9 @@ class CRM:
         self.db.create_function("casefold", 1, lambda value: (value or "").casefold(), deterministic=True)
 
     def lead(self, lead_id, writable=False):
-        row = self.db.execute("SELECT * FROM leads WHERE id=? AND recipient=?",
-                              (identifier(lead_id), self.owner)).fetchone()
+        row = self.db.execute(
+            "SELECT * FROM leads WHERE id=? AND recipient=?", (identifier(lead_id), self.owner)
+        ).fetchone()
         if row is None:
             raise NotFound("Лид не найден.")
         if writable and row["merged_into"] is not None:
@@ -211,27 +250,38 @@ class CRM:
 
     def members(self, lead_id):
         self.lead(lead_id)
-        return [row["id"] for row in self.db.execute(
-            "SELECT id FROM leads WHERE recipient=? AND (id=? OR merged_into=?)",
-            (self.owner, lead_id, lead_id),
-        )]
+        return [
+            row["id"]
+            for row in self.db.execute(
+                "SELECT id FROM leads WHERE recipient=? AND (id=? OR merged_into=?)",
+                (self.owner, lead_id, lead_id),
+            )
+        ]
 
     def client(self, client_id):
-        row = self.db.execute("SELECT * FROM clients WHERE id=? AND owner_id=?",
-                              (identifier(client_id), self.owner)).fetchone()
+        row = self.db.execute(
+            "SELECT * FROM clients WHERE id=? AND owner_id=?", (identifier(client_id), self.owner)
+        ).fetchone()
         if row is None:
             raise NotFound("Заказчик не найден.")
         result = dict(row)
-        result["projects"] = [dict(item) for item in self.db.execute(
-            "SELECT id,title,status,merged_into FROM leads WHERE client_id=? AND recipient=?",
-            (client_id, self.owner),
-        )]
+        result["projects"] = [
+            dict(item)
+            for item in self.db.execute(
+                "SELECT id,title,status,merged_into FROM leads WHERE client_id=? AND recipient=?",
+                (client_id, self.owner),
+            )
+        ]
         return result
 
     def clients(self):
-        return [dict(row) for row in self.db.execute(
-            "SELECT * FROM clients WHERE owner_id=? ORDER BY id DESC LIMIT 1000", (self.owner,),
-        )]
+        return [
+            dict(row)
+            for row in self.db.execute(
+                "SELECT * FROM clients WHERE owner_id=? ORDER BY id DESC LIMIT 1000",
+                (self.owner,),
+            )
+        ]
 
     def create_client(self, data):
         allowed = {"name", "contact", "platform", "public_id", "kind", "company_id"}
@@ -258,8 +308,7 @@ class CRM:
                 if existing:
                     return self.client(existing["id"])
             client_id = client_record(self.db, self.owner, platform, public_id, name, contact)
-            self.db.execute("UPDATE clients SET kind=?,company_id=? WHERE id=?",
-                            (kind, company_id, client_id))
+            self.db.execute("UPDATE clients SET kind=?,company_id=? WHERE id=?", (kind, company_id, client_id))
         return self.client(client_id)
 
     def update_client(self, client_id, changes):
@@ -280,16 +329,30 @@ class CRM:
                 if company["kind"] != "company":
                     raise ValueError("Родительская карточка должна быть компанией.")
                 ancestor = company["company_id"]
-            self.db.execute("UPDATE clients SET name=?,contact=?,company_id=? WHERE id=?",
-                            (name, contact, parent, client_id))
+            self.db.execute(
+                "UPDATE clients SET name=?,contact=?,company_id=? WHERE id=?", (name, contact, parent, client_id)
+            )
             for lead in current["projects"]:
-                activity(self.db, lead["id"], "client_updated",
-                         {"client_id": client_id, "before": {key: current[key] for key in changes}, "changes": changes})
+                activity(
+                    self.db,
+                    lead["id"],
+                    "client_updated",
+                    {"client_id": client_id, "before": {key: current[key] for key in changes}, "changes": changes},
+                )
         return self.client(client_id)
 
     def create(self, data):
-        allowed = {"title", "original_text", "platform", "source_key", "source_name",
-                   "external_message_id", "url", "client_id", "categories"}
+        allowed = {
+            "title",
+            "original_text",
+            "platform",
+            "source_key",
+            "source_name",
+            "external_message_id",
+            "url",
+            "client_id",
+            "categories",
+        }
         if set(data) - allowed:
             raise ValueError("Неизвестное поле нового лида.")
         title = text(data.get("title"), 500)
@@ -311,7 +374,10 @@ class CRM:
         with transaction(self.db):
             if message_id:
                 duplicate = self.db.execute(
-                    "SELECT lead_id FROM crm_message_keys WHERE owner_id=? AND platform=? AND source_key=? AND message_key=?",
+                    (
+                        "SELECT lead_id FROM crm_message_keys WHERE owner_id=? AND platform=?"
+                        " AND source_key=? AND message_key=?"
+                    ),
                     (self.owner, platform, source_key, message_id),
                 ).fetchone()
                 if duplicate:
@@ -328,15 +394,26 @@ class CRM:
                 (lead_id, source_id, url, message_id),
             )
             if message_id:
-                self.db.execute("INSERT INTO crm_message_keys VALUES (?,?,?,?,?)",
-                                (self.owner, platform, source_key, message_id, lead_id))
+                self.db.execute(
+                    "INSERT INTO crm_message_keys VALUES (?,?,?,?,?)",
+                    (self.owner, platform, source_key, message_id, lead_id),
+                )
             for category in categories:
                 self.db.execute("INSERT OR IGNORE INTO lead_categories VALUES (?,?)", (lead_id, category))
             activity(self.db, lead_id, "lead_registered", {"status": "new"}, "owner")
         return self.card(lead_id)
 
-    def list_leads(self, search="", status=None, platform=None, category=None, priority=None,
-                   limit=50, offset=0, include_merged=False):
+    def list_leads(
+        self,
+        search="",
+        status=None,
+        platform=None,
+        category=None,
+        priority=None,
+        limit=50,
+        offset=0,
+        include_merged=False,
+    ):
         if type(limit) is not int or not 1 <= limit <= 10000 or type(offset) is not int or offset < 0:
             raise ValueError("Некорректные параметры страницы.")
         if status is not None and status not in STATUSES:
@@ -372,11 +449,12 @@ class CRM:
             )
             params.append(category)
         condition = " AND ".join(where)
-        total = self.db.execute(f"SELECT count(*) FROM leads l WHERE {condition}", params).fetchone()[0]
+        total = self.db.execute(f"SELECT count(*) FROM leads l WHERE {condition}", params).fetchone()[0]  # noqa: S608 — условие из констант; значения передаются параметрами
         rows = self.db.execute(
-            f"SELECT l.*,c.name AS client_name,c.contact AS contact,"
+            f"SELECT l.*,c.name AS client_name,c.contact AS contact,"  # noqa: S608 — условие из констант; значения передаются параметрами
             f"(SELECT group_concat(category,' | ') FROM lead_categories WHERE lead_id=l.id) AS categories "
-            f"FROM leads l LEFT JOIN clients c ON c.id=l.client_id WHERE {condition} ORDER BY l.id DESC LIMIT ? OFFSET ?",
+            f"FROM leads l LEFT JOIN clients c ON c.id=l.client_id WHERE {condition} "
+            "ORDER BY l.id DESC LIMIT ? OFFSET ?",
             (*params, limit, offset),
         ).fetchall()
         return {"total": total, "items": [dict(row) for row in rows], "limit": limit, "offset": offset}
@@ -386,33 +464,51 @@ class CRM:
             raise ValueError("Неизвестный раздел карточки.")
         ids = self.members(lead_id)
         placeholders = ",".join("?" for _ in ids)
-        return [dict(row) for row in self.db.execute(
-            f"SELECT * FROM {table} WHERE lead_id IN ({placeholders}) ORDER BY id", ids,
-        )]
+        return [
+            dict(row)
+            for row in self.db.execute(
+                f"SELECT * FROM {table} WHERE lead_id IN ({placeholders}) ORDER BY id",  # noqa: S608 — имя таблицы из белого списка; список плейсхолдеров «?»
+                ids,
+            )
+        ]
 
     def card(self, lead_id):
         result = self.lead(lead_id)
         ids = self.members(lead_id)
         placeholders = ",".join("?" for _ in ids)
-        result["sources"] = [dict(row) for row in self.db.execute(
-            f"SELECT ls.*,s.platform,s.name,s.external_id,r.published_at,r.author_id,r.author_name,"
-            f"r.original_text AS source_original FROM lead_sources ls "
-            f"JOIN sources s ON s.id=ls.source_id LEFT JOIN raw_messages r ON r.id=ls.raw_id "
-            f"WHERE ls.lead_id IN ({placeholders})", ids,
-        )]
-        result["categories"] = [row[0] for row in self.db.execute(
-            f"SELECT DISTINCT category FROM lead_categories WHERE lead_id IN ({placeholders})", ids,
-        )]
+        result["sources"] = [
+            dict(row)
+            for row in self.db.execute(
+                f"SELECT ls.*,s.platform,s.name,s.external_id,r.published_at,r.author_id,r.author_name,"  # noqa: S608 — список плейсхолдеров «?» по числу идентификаторов
+                f"r.original_text AS source_original FROM lead_sources ls "
+                f"JOIN sources s ON s.id=ls.source_id LEFT JOIN raw_messages r ON r.id=ls.raw_id "
+                f"WHERE ls.lead_id IN ({placeholders})",
+                ids,
+            )
+        ]
+        result["categories"] = [
+            row[0]
+            for row in self.db.execute(
+                f"SELECT DISTINCT category FROM lead_categories WHERE lead_id IN ({placeholders})",  # noqa: S608 — список плейсхолдеров «?» по числу идентификаторов
+                ids,
+            )
+        ]
         result["client"] = self.client(result["client_id"]) if result["client_id"] else None
         result["merged_lead_ids"] = [value for value in ids if value != lead_id]
-        result["merges"] = [dict(row) for row in self.db.execute(
-            "SELECT id,secondary_id,created_at FROM lead_merges WHERE owner_id=? AND target_id=? AND active=1 ORDER BY id DESC",
-            (self.owner, lead_id),
-        )]
+        result["merges"] = [
+            dict(row)
+            for row in self.db.execute(
+                (
+                    "SELECT id,secondary_id,created_at FROM lead_merges WHERE owner_id=? "
+                    "AND target_id=? AND active=1 ORDER BY id DESC"
+                ),
+                (self.owner, lead_id),
+            )
+        ]
         result["analyses"] = []
         if self.db.execute("SELECT 1 FROM core_migrations WHERE version=3").fetchone():
             for row in self.db.execute(
-                f"SELECT a.result,a.raw_id FROM message_analyses a JOIN lead_messages lm ON lm.raw_id=a.raw_id "
+                f"SELECT a.result,a.raw_id FROM message_analyses a JOIN lead_messages lm ON lm.raw_id=a.raw_id "  # noqa: S608 — список плейсхолдеров «?» по числу идентификаторов
                 f"AND lm.recipient=a.recipient WHERE lm.lead_id IN ({placeholders}) AND a.recipient=? "
                 f"AND a.id=(SELECT max(id) FROM message_analyses WHERE raw_id=a.raw_id AND recipient=a.recipient)",
                 (*ids, self.owner),
@@ -449,14 +545,24 @@ class CRM:
             combined = {**current, **values}
             if any(combined[key] is not None for key in MONEY_FIELDS) and not combined["currency"]:
                 raise ValueError("Для денежных полей нужна валюта.")
-            for lower, upper in (("estimated_budget_min", "estimated_budget_max"), ("minimum_price", "recommended_price")):
-                if combined[lower] is not None and combined[upper] is not None and Decimal(combined[lower]) > Decimal(combined[upper]):
+            for lower, upper in (
+                ("estimated_budget_min", "estimated_budget_max"),
+                ("minimum_price", "recommended_price"),
+            ):
+                if (
+                    combined[lower] is not None
+                    and combined[upper] is not None
+                    and Decimal(combined[lower]) > Decimal(combined[upper])
+                ):
                     raise ValueError("Нижняя граница превышает верхнюю.")
             assignments = ",".join(f"{key}=?" for key in values)
-            self.db.execute(f"UPDATE leads SET {assignments},updated_at=? WHERE id=?",
-                            (*values.values(), time.time(), lead_id))
-            activity(self.db, lead_id, "lead_updated",
-                     {"before": {key: current[key] for key in values}, "after": values})
+            self.db.execute(
+                f"UPDATE leads SET {assignments},updated_at=? WHERE id=?",  # noqa: S608 — имена столбцов из белого списка EDITABLE
+                (*values.values(), time.time(), lead_id),
+            )
+            activity(
+                self.db, lead_id, "lead_updated", {"before": {key: current[key] for key in values}, "after": values}
+            )
         return self.card(lead_id)
 
     def change_status(self, lead_id, status):
@@ -484,7 +590,10 @@ class CRM:
             self.lead(lead_id, writable=True)
             if message_id:
                 existing = self.db.execute(
-                    "SELECT lead_id FROM crm_message_keys WHERE owner_id=? AND platform=? AND source_key=? AND message_key=?",
+                    (
+                        "SELECT lead_id FROM crm_message_keys WHERE owner_id=? AND platform=?"
+                        " AND source_key=? AND message_key=?"
+                    ),
                     (self.owner, platform, key, message_id),
                 ).fetchone()
                 if existing and existing["lead_id"] != lead_id:
@@ -501,8 +610,10 @@ class CRM:
                 (lead_id, source_id, message_id, url),
             ).lastrowid
             if message_id:
-                self.db.execute("INSERT OR IGNORE INTO crm_message_keys VALUES (?,?,?,?,?)",
-                                (self.owner, platform, key, message_id, lead_id))
+                self.db.execute(
+                    "INSERT OR IGNORE INTO crm_message_keys VALUES (?,?,?,?,?)",
+                    (self.owner, platform, key, message_id, lead_id),
+                )
             activity(self.db, lead_id, "source_added", {"source_id": source_id, "publication_url": url})
         return row_id
 
@@ -510,8 +621,9 @@ class CRM:
         content = text(value)
         with transaction(self.db):
             self.lead(lead_id, writable=True)
-            row_id = self.db.execute("INSERT INTO notes(lead_id,text,created_at) VALUES (?,?,?)",
-                                     (lead_id, content, time.time())).lastrowid
+            row_id = self.db.execute(
+                "INSERT INTO notes(lead_id,text,created_at) VALUES (?,?,?)", (lead_id, content, time.time())
+            ).lastrowid
             activity(self.db, lead_id, "note_added", {"note_id": row_id})
         return row_id
 
@@ -535,8 +647,9 @@ class CRM:
         with transaction(self.db):
             self.lead(lead_id, writable=True)
             now = time.time()
-            row_id = self.db.execute("INSERT INTO drafts(lead_id,text,created_at,updated_at) VALUES (?,?,?,?)",
-                                     (lead_id, content, now, now)).lastrowid
+            row_id = self.db.execute(
+                "INSERT INTO drafts(lead_id,text,created_at,updated_at) VALUES (?,?,?,?)", (lead_id, content, now, now)
+            ).lastrowid
             activity(self.db, lead_id, "draft_created", {"draft_id": row_id})
         return row_id
 
@@ -558,10 +671,15 @@ class CRM:
             status = changes.get("status", draft["status"])
             if status not in {"draft", "approved", "rejected"}:
                 raise ValueError("Отметка отправки требует отдельного действия.")
-            self.db.execute("UPDATE drafts SET text=?,status=?,updated_at=? WHERE id=?",
-                            (content, status, time.time(), draft_id))
-            activity(self.db, draft["lead_id"], "draft_updated",
-                     {"draft_id": draft_id, "before": draft, "status": status, "text": content})
+            self.db.execute(
+                "UPDATE drafts SET text=?,status=?,updated_at=? WHERE id=?", (content, status, time.time(), draft_id)
+            )
+            activity(
+                self.db,
+                draft["lead_id"],
+                "draft_updated",
+                {"draft_id": draft_id, "before": draft, "status": status, "text": content},
+            )
         return self.draft(draft_id)
 
     def mark_draft_sent(self, draft_id):
@@ -579,8 +697,10 @@ class CRM:
                 "VALUES (?,?,'outgoing',?,?,'manual_draft_confirmation',?)",
                 (draft["lead_id"], client_id, draft["text"], now, now),
             ).lastrowid
-            self.db.execute("UPDATE drafts SET status='sent',updated_at=?,sent_conversation_id=? WHERE id=?",
-                            (now, row_id, draft_id))
+            self.db.execute(
+                "UPDATE drafts SET status='sent',updated_at=?,sent_conversation_id=? WHERE id=?",
+                (now, row_id, draft_id),
+            )
             activity(self.db, draft["lead_id"], "draft_marked_sent", {"draft_id": draft_id, "conversation_id": row_id})
         return row_id
 
@@ -609,10 +729,16 @@ class CRM:
                 raise ValueError("Неизвестный статус напоминания.")
             content = text(changes.get("text", row["text"]))
             due = timestamp(changes["due_at"]) if "due_at" in changes else row["due_at"]
-            self.db.execute("UPDATE reminders SET text=?,due_at=?,status=?,updated_at=? WHERE id=?",
-                            (content, due, status, time.time(), reminder_id))
-            activity(self.db, row["lead_id"], "reminder_updated",
-                     {"reminder_id": reminder_id, "before": dict(row), "status": status, "due_at": due, "text": content})
+            self.db.execute(
+                "UPDATE reminders SET text=?,due_at=?,status=?,updated_at=? WHERE id=?",
+                (content, due, status, time.time(), reminder_id),
+            )
+            activity(
+                self.db,
+                row["lead_id"],
+                "reminder_updated",
+                {"reminder_id": reminder_id, "before": dict(row), "status": status, "due_at": due, "text": content},
+            )
         return reminder_id
 
     def reminders(self, due_before=None):
@@ -620,10 +746,14 @@ class CRM:
         if due_before:
             condition = " AND r.due_at<=?"
             params.append(timestamp(due_before))
-        return [dict(row) for row in self.db.execute(
-            "SELECT r.* FROM reminders r JOIN leads l ON l.id=r.lead_id "
-            f"WHERE l.recipient=? AND r.status='pending'{condition} ORDER BY r.due_at LIMIT 1000", params,
-        )]
+        return [
+            dict(row)
+            for row in self.db.execute(
+                "SELECT r.* FROM reminders r JOIN leads l ON l.id=r.lead_id "  # noqa: S608 — условие из констант; значения передаются параметрами
+                f"WHERE l.recipient=? AND r.status='pending'{condition} ORDER BY r.due_at LIMIT 1000",
+                params,
+            )
+        ]
 
     def add_feedback(self, lead_id, decision, reason=None):
         if decision not in {"approved", "rejected", "needs_review"}:
@@ -631,8 +761,10 @@ class CRM:
         reason = text(reason, optional=True)
         with transaction(self.db):
             self.lead(lead_id, writable=True)
-            row_id = self.db.execute("INSERT INTO lead_feedback(lead_id,decision,reason,created_at) VALUES (?,?,?,?)",
-                                     (lead_id, decision, reason, time.time())).lastrowid
+            row_id = self.db.execute(
+                "INSERT INTO lead_feedback(lead_id,decision,reason,created_at) VALUES (?,?,?,?)",
+                (lead_id, decision, reason, time.time()),
+            ).lastrowid
             activity(self.db, lead_id, "feedback_added", {"feedback_id": row_id, "decision": decision})
         return row_id
 
@@ -649,11 +781,18 @@ class CRM:
             self.lead(lead_id, writable=True)
             now = time.time()
             row_id = self.db.execute(
-                "INSERT INTO deals(lead_id,title,status,actual_revenue,currency,created_at,closed_at) VALUES (?,?,?,?,?,?,?)",
+                (
+                    "INSERT INTO deals(lead_id,title,status,actual_revenue,currency,creat"
+                    "ed_at,closed_at) VALUES (?,?,?,?,?,?,?)"
+                ),
                 (lead_id, title, status, revenue, code, now, now if status != "open" else None),
             ).lastrowid
-            activity(self.db, lead_id, "deal_created",
-                     {"deal_id": row_id, "title": title, "status": status, "actual_revenue": revenue, "currency": code})
+            activity(
+                self.db,
+                lead_id,
+                "deal_created",
+                {"deal_id": row_id, "title": title, "status": status, "actual_revenue": revenue, "currency": code},
+            )
         return row_id
 
     def update_deal(self, deal_id, changes):
@@ -671,11 +810,23 @@ class CRM:
             if status not in {"open", "won", "lost"} or (revenue is not None and (not code or status != "won")):
                 raise ValueError("Фактическая выручка допустима у заключённой сделки с указанной валютой.")
             closed = (row["closed_at"] or time.time()) if status != "open" else None
-            self.db.execute("UPDATE deals SET title=?,status=?,actual_revenue=?,currency=?,closed_at=? WHERE id=?",
-                            (title, status, revenue, code, closed, deal_id))
-            activity(self.db, row["lead_id"], "deal_updated",
-                     {"deal_id": deal_id, "before": dict(row), "status": status,
-                      "actual_revenue": revenue, "currency": code, "title": title})
+            self.db.execute(
+                "UPDATE deals SET title=?,status=?,actual_revenue=?,currency=?,closed_at=? WHERE id=?",
+                (title, status, revenue, code, closed, deal_id),
+            )
+            activity(
+                self.db,
+                row["lead_id"],
+                "deal_updated",
+                {
+                    "deal_id": deal_id,
+                    "before": dict(row),
+                    "status": status,
+                    "actual_revenue": revenue,
+                    "currency": code,
+                    "title": title,
+                },
+            )
         return deal_id
 
     def possible_duplicates(self, lead_id):
@@ -693,7 +844,11 @@ class CRM:
         for candidate in candidates:
             reasons = []
             other = " ".join((candidate["original_text"] or candidate["title"]).casefold().split())
-            if target_text and len(target_text) >= 15 and SequenceMatcher(None, target_text[:4000], other[:4000]).ratio() >= .82:
+            if (
+                target_text
+                and len(target_text) >= 15
+                and SequenceMatcher(None, target_text[:4000], other[:4000]).ratio() >= 0.82
+            ):
                 reasons.append("similar_text")
             if target_url and target_url == canonical_url(candidate["url"]):
                 reasons.append("same_url")
@@ -720,18 +875,21 @@ class CRM:
                 (target_id, secondary_id, self.owner, time.time()),
             ).lastrowid
             for item in items:
-                self.db.execute("INSERT INTO lead_merge_items VALUES (?,?,?)",
-                                (merge_id, item["id"], item["merged_into"]))
+                self.db.execute(
+                    "INSERT INTO lead_merge_items VALUES (?,?,?)", (merge_id, item["id"], item["merged_into"])
+                )
                 self.db.execute("UPDATE leads SET merged_into=? WHERE id=?", (target_id, item["id"]))
-            activity(self.db, target_id, "leads_merged",
-                     {"merge_id": merge_id, "members": [item["id"] for item in items]})
+            activity(
+                self.db, target_id, "leads_merged", {"merge_id": merge_id, "members": [item["id"] for item in items]}
+            )
             activity(self.db, secondary_id, "merged_into", {"merge_id": merge_id, "target_id": target_id})
         return {"merge_id": merge_id, "lead": self.card(target_id)}
 
     def split(self, merge_id):
         with transaction(self.db):
-            merge = self.db.execute("SELECT * FROM lead_merges WHERE id=? AND owner_id=?",
-                                     (identifier(merge_id), self.owner)).fetchone()
+            merge = self.db.execute(
+                "SELECT * FROM lead_merges WHERE id=? AND owner_id=?", (identifier(merge_id), self.owner)
+            ).fetchone()
             if merge is None:
                 raise NotFound("Объединение не найдено.")
             if not merge["active"]:
@@ -761,7 +919,8 @@ class CRM:
             platforms[row["platform"]] = platforms.get(row["platform"], 0) + 1
             reached[row["status"]].add(row["id"])
         for row in self.db.execute(
-            "SELECT a.* FROM activities a JOIN leads l ON l.id=a.lead_id WHERE l.recipient=?", (self.owner,),
+            "SELECT a.* FROM activities a JOIN leads l ON l.id=a.lead_id WHERE l.recipient=?",
+            (self.owner,),
         ):
             details = json.loads(row["details"])
             status = details.get("to") if row["kind"] == "status_changed" else details.get("status")
@@ -772,27 +931,37 @@ class CRM:
             (self.owner,),
         ):
             categories.setdefault(row["category"], set()).add(roots[row["lead_id"]])
-        conversations = dict(self.db.execute(
-            "SELECT c.direction,count(*) FROM conversations c JOIN leads l ON l.id=c.lead_id "
-            "WHERE l.recipient=? AND c.direction!='system' GROUP BY c.direction", (self.owner,),
-        ))
+        conversations = dict(
+            self.db.execute(
+                "SELECT c.direction,count(*) FROM conversations c JOIN leads l ON l.id=c.lead_id "
+                "WHERE l.recipient=? AND c.direction!='system' GROUP BY c.direction",
+                (self.owner,),
+            )
+        )
         replies = self.db.execute(
             "SELECT count(*) FROM conversations c JOIN leads l ON l.id=c.lead_id "
-            "WHERE l.recipient=? AND c.direction='incoming' AND c.provenance='manual'", (self.owner,),
+            "WHERE l.recipient=? AND c.direction='incoming' AND c.provenance='manual'",
+            (self.owner,),
         ).fetchone()[0]
         revenue, won_deals = {}, 0
         for row in self.db.execute(
-            "SELECT d.* FROM deals d JOIN leads l ON l.id=d.lead_id WHERE l.recipient=? AND d.status='won'", (self.owner,),
+            "SELECT d.* FROM deals d JOIN leads l ON l.id=d.lead_id WHERE l.recipient=? AND d.status='won'",
+            (self.owner,),
         ):
             won_deals += 1
             if row["actual_revenue"] is not None:
                 revenue[row["currency"]] = revenue.get(row["currency"], Decimal(0)) + Decimal(row["actual_revenue"])
         return {
-            "total": len(active), "new": stages["new"], "by_status": stages, "by_platform": platforms,
+            "total": len(active),
+            "new": stages["new"],
+            "by_status": stages,
+            "by_platform": platforms,
             "by_category": {key: len(value) for key, value in categories.items()},
-            "outgoing_messages": conversations.get("outgoing", 0), "incoming_messages": conversations.get("incoming", 0),
+            "outgoing_messages": conversations.get("outgoing", 0),
+            "incoming_messages": conversations.get("incoming", 0),
             "replies": replies,
-            "negotiations": stages["negotiation"], "won_deals": won_deals,
+            "negotiations": stages["negotiation"],
+            "won_deals": won_deals,
             "actual_revenue": {key: str(value) for key, value in revenue.items()},
             "stage_reached": {key: len(value) for key, value in reached.items()},
             "stage_conversion": {key: len(value) / len(active) if active else None for key, value in reached.items()},
@@ -803,18 +972,30 @@ class CRM:
         items = []
         for row in self.db.execute(
             "SELECT id,discovered_at,status FROM leads WHERE recipient=? AND merged_into IS NULL "
-            "AND discovered_at IS NOT NULL AND discovered_at<?", (self.owner, cutoff),
+            "AND discovered_at IS NOT NULL AND discovered_at<?",
+            (self.owner, cutoff),
         ).fetchall():
-            active_statuses = {"ready", "draft_prepared", "outreach_sent", "client_replied",
-                              "negotiation", "proposal_sent", "awaiting_decision", "won"}
+            active_statuses = {
+                "ready",
+                "draft_prepared",
+                "outreach_sent",
+                "client_replied",
+                "negotiation",
+                "proposal_sent",
+                "awaiting_decision",
+                "won",
+            }
             protected = any(
-                item["status"] in active_statuses for item in self.db.execute(
+                item["status"] in active_statuses
+                for item in self.db.execute(
                     "SELECT status FROM leads WHERE recipient=? AND (id=? OR merged_into=?)",
                     (self.owner, row["id"], row["id"]),
                 )
             )
             protected = protected or any(deal["status"] in {"open", "won"} for deal in self.related("deals", row["id"]))
-            protected = protected or any(reminder["status"] == "pending" for reminder in self.related("reminders", row["id"]))
+            protected = protected or any(
+                reminder["status"] == "pending" for reminder in self.related("reminders", row["id"])
+            )
             items.append({**dict(row), "protected": bool(protected), "automatic_deletion": False})
         return {"retention_days": 30, "deletion_enabled": False, "items": items}
 
