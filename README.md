@@ -121,6 +121,21 @@ if (-not (Test-Path .env)) { Copy-Item .env.example .env }
 check.cmd автоматически выбирает `.venv/Scripts/python.exe`, check.sh —
 `.venv/bin/python`, если такое окружение существует.
 
+### Воспроизводимая установка
+
+Точные версии всех пакетов зафиксированы в `requirements.lock`. Он проверен:
+чистое окружение, установка только из него, `pip check` без ошибок, все тесты
+проходят (Python 3.12). Для установки с теми же версиями:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock -r requirements-dev.txt
+```
+
+`requirements.txt` остаётся списком допустимых диапазонов. При обновлении
+зависимостей `requirements.lock` пересобирают из чистого окружения
+(`pip freeze`) и перезапускают проверки.
+
 Ожидается OK для Python, библиотек, конфига, read-only SQLite и существующего
 файла сессии. SKIP schema нормален: новые таблицы в рабочую базу не добавлялись.
 Сетевые проверки по умолчанию SKIP. Настоящая .env не создаётся автоматически
