@@ -1,0 +1,30 @@
+[
+  {
+    "id": "forma-interiors",
+    "title": "Forma — Quiet Living",
+    "category": "web",
+    "kind": "concept",
+    "description": "Выразительный сайт интерьерного бренда с интерактивной коллекцией.",
+    "url": "/forma.html",
+    "technologies": [
+      "Editorial design",
+      "Interactive catalog",
+      "Responsive"
+    ],
+    "preview": "forma"
+  },
+  {
+    "id": "nexus-workspace",
+    "title": "Nexus — Work in Flow",
+    "category": "automation",
+    "kind": "demo",
+    "description": "Полноценный интерфейс: поиск, создание проектов и история действий.",
+    "url": "/nexus.html",
+    "technologies": [
+      "Product design",
+      "Interactive workspace",
+      "State management"
+    ],
+    "preview": "nexus"
+  }
+]

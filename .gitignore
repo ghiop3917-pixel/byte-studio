@@ -1,0 +1,24 @@
+*.sqlite3*
+__pycache__/
+.env
+recipient.json
+recipient.tmp
+directions.json
+directions.tmp
+backups/
+
+# Локальные секреты, состояние и результаты работы
+.env.*
+!.env.example
+*.session*
+*.log
+*.sqlite*
+*.db
+*.db-*
+*.pem
+*.key
+artifacts/
+tmp*/
+source-expansion.json
+business-candidates.json
+.pytest_cache/

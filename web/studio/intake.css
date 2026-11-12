@@ -1,0 +1,19 @@
+@font-face{font-family:Onest;src:url('/fonts/Onest-Variable.ttf') format('truetype');font-weight:100 900;font-display:swap}
+@font-face{font-family:Oswald;src:url('/fonts/Oswald-Variable.ttf') format('truetype');font-weight:200 700;font-display:swap}
+@font-face{font-family:'Golos Text';src:url('/fonts/GolosText-Variable.ttf') format('truetype');font-weight:400 900;font-display:swap}
+@font-face{font-family:Anton;src:url('/fonts/Anton-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+@font-face{font-family:Manrope;src:url('/fonts/Manrope-Variable.ttf') format('truetype');font-weight:200 800;font-display:swap}
+#contact-form .optional-field{display:inline;font-size:10px;color:#787887;margin-left:6px;text-transform:none;letter-spacing:0;font-weight:400}
+#contact-form .intake-honeypot{position:absolute;left:-10000px;width:1px;height:1px;overflow:hidden}
+#contact-form .intake-consent{display:flex;grid-column:1/-1;align-items:flex-start;gap:10px;font-size:11px;line-height:1.8;color:#858a9b;margin:20px 0}
+#contact-form .intake-consent input{flex:0 0 14px;width:14px;height:14px;min-height:0;margin-top:4px;padding:0;accent-color:#6865ff}
+#contact-form .intake-consent a{text-decoration:underline;text-underline-offset:3px}
+#contact-form .intake-telegram{display:inline-block;color:#aaa5ff;font-size:12px;margin-top:18px}
+#contact-form .brief-fallback{grid-column:1/-1;border-top:1px solid #ffffff15;padding-top:16px;margin-top:22px;font-size:11px;color:#858a9b}
+#contact-form .brief-fallback summary{cursor:pointer}
+#contact-form #prepare-brief{margin-top:15px}
+#contact-form #brief-result{margin-top:20px}
+#contact-form .form-status.is-success{border:1px solid #8180d93b;background:#6865ff0d;color:#c3c1ff;padding:14px 16px;border-radius:4px}
+#contact-form .form-status.is-error{color:#f2a7ac}
+#contact-form #send-request[disabled]{opacity:.75;cursor:default}
+@media(max-width:760px){#contact-form .intake-consent{font-size:11px}#contact-form input,#contact-form textarea{font-size:16px}#contact-form .form-row{grid-template-columns:1fr}#contact-form .brief-fallback{font-size:12px}}
