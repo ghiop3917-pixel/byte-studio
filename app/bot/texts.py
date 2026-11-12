@@ -132,3 +132,23 @@ UNKNOWN_VALUE = "неизвестно"
 CANDIDATE_CHECK_USAGE = "/candidate_check <ID кандидата>: проверяет доступ без повторного вступления"
 CANDIDATE_CHECK_WAIT = "Доступ пока не подтверждён или проверка недоступна. Новое вступление не отправлялось."
 CANDIDATE_CHECK_RESULT = "Статус проверки доступа: {status}. Запрос вступления не отправлялся."
+
+
+LEAD_CARD = (
+    "⚡ {score} · {category}\n<i>{summary}</i>\n<blockquote>{text}</blockquote>\n"
+    "👤 {author}\n💬 {source} ({geo})\n🕐 {date}"
+)
+HIDDEN_USERNAME = "username скрыт"
+UNKNOWN_GEO = "гео неизвестно"
+BTN_WRITE = "✍️ Написать"
+BTN_ORIGINAL = "🔗 Сообщение"
+BTN_DRAFT = "🔥 Сделать отклик"
+BTN_SPAM = "🤖 Спам"
+BTN_SPAM_MARKED = "Отмечено"
+LEAD_ACCESS_DENIED = "Карточка недоступна этому пользователю или подписка неактивна."
+DRAFT_DISABLED = "Локальная LLM выключена. Черновик не создавался."
+DRAFT_BUSY = "Черновик уже готовится или ожидает разрешённого повтора."
+DRAFT_FAILED = "Черновик не готов. Ошибка сохранена; число попыток ограничено."
+DRAFT_GENERATING = "Готовлю черновик. Заказчику ничего не отправляется."
+DRAFT_RESULT = "Черновик — не отправлен заказчику:\n\n{text}"
+FEEDBACK_SAVED = "Отметка сохранена."

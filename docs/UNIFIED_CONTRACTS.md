@@ -372,3 +372,50 @@ Callback-префиксы: page(name), category(category_id, enabled), score(val
 три новые таблицы; это намеренный отказ запуска до согласованной миграции.
 Кандидат pending_approval не означает членство. joined означает подтверждённое
 членство; source.status=removed сохраняется и не включается обратно автоматически.
+
+
+## Контракты Этапа 4
+
+- pipeline.classifier.Classification: strict, extra=forbid; is_lead bool,
+  category Literal из семи slug, score int 0–100, summary str 1–120 без переносов,
+  language — код языка. parse_classification(value: str) -> Classification.
+- cache_key(text, title, settings) -> SHA256 с контекстом и версией промпта.
+- LLM(settings, client: httpx.AsyncClient | None = None):
+  classify(text, chat_title) -> Classification, draft(text, chat_title) -> str, close().
+  request(system, text, title, *, tokens) -> str; endpoint() -> str.
+- Публичная async classify(text: str, chat_title: str) -> Classification;
+  основной runtime использует общий LLM, а не отдельный экземпляр на сообщение.
+- ClassificationWorker(database, settings, llm): claim(), result(claim),
+  save(claim,result), fanout(claim), fail(claim,error), process_one() -> bool, loop().
+- ClassificationClaim(id, raw_id, token, phase, text, title).
+- Delivery(database, settings, bot): recover() -> int, claim(),
+  outcome(claim,status,*,message_id=None,error=None,delay=0,deactivate=False),
+  process_one() -> bool, loop(). DeliveryClaim(id,token,tg_id,text,markup).
+- eligible(session,user,lead,source,settings) -> bool;
+  card(lead,source,category,settings) -> tuple[str,InlineKeyboardMarkup].
+- MessageRateLimiter(settings, *, database=None) — общий session middleware;
+  bot_pause(database), set_bot_pause(session,delay) сохраняют RetryAfter.
+- LeadActions(database, settings, llm=None): access(session,actor,lead_id,*,subscribed=False),
+  feedback(actor,lead_id,kind), draft(actor,lead_id) -> str.
+- LeadActionData(lead_id:int, action:str), префикс lead;
+  действия draft/spam/contacted/responded. Карточка показывает draft/spam;
+  contacted/responded пока только поддержанные контрактом действия.
+
+Декларации, не применённые к рабочей базе:
+
+- lh_classification_cache: key PK, text_hash indexed, result, created_at.
+- lh_delivery_jobs: id PK, lead_id FK/indexed, user_id FK/indexed,
+  UNIQUE(lead_id,user_id), status indexed, attempts, due_at indexed, last_attempt_at,
+  lease_until, token, message_id, errors JSON. Статусы pending/processing/retry_wait/
+  completed/failed/ambiguous/suppressed/dry_run.
+- lh_lead_drafts: id PK, lead_id FK, user_id FK, UNIQUE(lead_id,user_id), status,
+  text, attempts, token, lease_until, due_at, error, created_at.
+- lh_ingest_jobs: добавлен fanout_after; classifier -> fanout -> completed.
+  Fanout атомарно фиксирует порцию outbox и позицию, поэтому перезапуск не теряет адресатов.
+- ReaderState.bot_retry_until — общий сохранённый cooldown Bot API.
+
+RawMessage.status=lead тоже участвует в поиске кросспостов. Оригиналы, ошибки
+и черновики не удаляются. Повторная классификация существующего platform ID
+не перезаписывает сохранённую карточку и не создаёт повторную outbox.
+Старые публичные контракты сохранены; тест состава сервисов обновлён на шесть
+задач, прежние проверки интерфейса и очистки ресурсов сохранены.

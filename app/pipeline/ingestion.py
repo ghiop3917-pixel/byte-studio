@@ -145,7 +145,16 @@ class Ingestion:
                 )
             ).all()
             for job in rows:
-                job.status = "failed" if job.attempts >= self.settings.ingest_max_attempts else "retry_wait"
+                job.status = (
+                    "failed"
+                    if job.attempts
+                    >= (
+                        self.settings.ingest_max_attempts
+                        if job.phase == "prefilter"
+                        else self.settings.llm_max_attempts
+                    )
+                    else "retry_wait"
+                )
                 job.due_at = now
                 job.token = None
                 job.lease_until = None
@@ -183,7 +192,12 @@ class Ingestion:
             job = await session.get(IngestJob, claim.id)
             if job is None or job.status != "processing" or job.token != claim.token:
                 return
-            job.status = "failed" if job.attempts >= self.settings.ingest_max_attempts else "retry_wait"
+            job.status = (
+                "failed"
+                if job.attempts
+                >= (self.settings.ingest_max_attempts if job.phase == "prefilter" else self.settings.llm_max_attempts)
+                else "retry_wait"
+            )
             job.due_at = now + timedelta(
                 seconds=min(
                     self.settings.retry_initial_seconds * 2 ** (job.attempts - 1), self.settings.retry_max_seconds
@@ -249,7 +263,7 @@ class Ingestion:
                                 RawMessage.id != raw.id,
                                 RawMessage.text_hash == raw.text_hash,
                                 RawMessage.author_tg_id == raw.author_tg_id,
-                                RawMessage.status == "candidate",
+                                RawMessage.status.in_(("candidate", "lead")),
                                 published >= observed - window,
                                 published <= observed + window,
                             )
@@ -295,6 +309,7 @@ class Ingestion:
             if job is None or job.status == "processing":
                 raise ValueError("Задание отсутствует или уже обрабатывается.")
             job.phase = "prefilter"
+            job.fanout_after = 0
             job.status = "pending"
             job.attempts = 0
             job.due_at = utc_now()

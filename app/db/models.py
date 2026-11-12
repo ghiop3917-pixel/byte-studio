@@ -221,6 +221,7 @@ class IngestJob(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     raw_id: Mapped[int] = mapped_column(ForeignKey("lh_raw_messages.id"), unique=True)
     phase: Mapped[str] = mapped_column(String(32), default="prefilter", index=True)
+    fanout_after: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
@@ -291,3 +292,48 @@ class JoinAttempt(Base):
     token: Mapped[str] = mapped_column(String(32), unique=True)
     started_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
     outcome: Mapped[str] = mapped_column(String(64), default="started")
+
+
+class ClassificationCache(Base):
+    __tablename__ = "lh_classification_cache"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    text_hash: Mapped[str] = mapped_column(String(64), index=True)
+    result: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class DeliveryJob(Base):
+    __tablename__ = "lh_delivery_jobs"
+    __table_args__ = (
+        UniqueConstraint("lead_id", "user_id"),
+        CheckConstraint(
+            "status IN ('pending','processing','retry_wait','completed','failed','ambiguous','suppressed','dry_run')"
+        ),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("lh_leads.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("lh_users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    token: Mapped[str | None] = mapped_column(String(32))
+    message_id: Mapped[int | None] = mapped_column(Integer)
+    errors: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class LeadDraft(Base):
+    __tablename__ = "lh_lead_drafts"
+    __table_args__ = (UniqueConstraint("lead_id", "user_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lead_id: Mapped[int] = mapped_column(ForeignKey("lh_leads.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("lh_users.id"))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    text: Mapped[str | None] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    token: Mapped[str | None] = mapped_column(String(32))
+    lease_until: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)

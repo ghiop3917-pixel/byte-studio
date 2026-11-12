@@ -587,9 +587,9 @@ class ReaderBoundaryTests(unittest.IsolatedAsyncioTestCase):
         ingestion = Mock(processing_loop=AsyncMock())
 
         async def run_once(services, cfg, stop):
-            self.assertEqual(set(services), {"bot", "reader", "ingestion", "growth"})
+            self.assertEqual(set(services), {"bot", "reader", "ingestion", "growth", "classifier", "delivery"})
             for name, factory in services.items():
-                if name != "growth":
+                if name in {"bot", "reader", "ingestion"}:
                     await factory()
 
         with (

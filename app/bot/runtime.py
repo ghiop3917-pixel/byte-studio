@@ -93,16 +93,21 @@ async def _run(settings: Settings, with_reader: bool) -> None:
         from app.userbot.client import ReaderHub, run_reader
 
         hub = ReaderHub() if with_reader else None
+        from app.pipeline.classification import ClassificationWorker
+        from app.pipeline.classifier import LLM
+        from app.pipeline.delivery import Delivery, MessageRateLimiter
+
+        llm = LLM(settings)
+        bot = Bot(settings.bot_token.get_secret_value())
+        bot.session.middleware(MessageRateLimiter(settings, database=database))
 
         async def polling() -> None:
-            bot = Bot(settings.bot_token.get_secret_value())
-            dispatcher = Dispatcher(reader_hub=hub)
+            dispatcher = Dispatcher(reader_hub=hub, llm=llm)
             dispatcher.include_router(create_router(database, settings))
             try:
                 await dispatcher.start_polling(bot, handle_signals=False, close_bot_session=False)
             finally:
                 await dispatcher.storage.close()
-                await bot.session.close()
 
         try:
             services = {"bot": polling}
@@ -112,10 +117,18 @@ async def _run(settings: Settings, with_reader: bool) -> None:
                 from app.discovery import Growth
 
                 services["growth"] = Growth(database, settings, hub).loop
+                services["classifier"] = ClassificationWorker(database, settings, llm).loop
+                services["delivery"] = Delivery(database, settings, bot).loop
             await run_services(services, settings, asyncio.Event())
             raise RuntimeError(texts.INTERFACE_STOPPED)
         finally:
-            await database.close()
+            try:
+                await bot.session.close()
+            finally:
+                try:
+                    await llm.close()
+                finally:
+                    await database.close()
 
 
 async def run_interface(settings: Settings) -> None:

@@ -77,3 +77,8 @@ class CandidateData(CallbackData, prefix="candidate"):
 
 class CandidatesPageData(CallbackData, prefix="candidates"):
     after: int
+
+
+class LeadActionData(CallbackData, prefix="lead"):
+    lead_id: int
+    action: str
