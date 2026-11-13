@@ -93,16 +93,18 @@ async def _run(settings: Settings, with_reader: bool) -> None:
         from app.userbot.client import ReaderHub, run_reader
 
         hub = ReaderHub() if with_reader else None
+        from app.companies.service import Companies
         from app.pipeline.classification import ClassificationWorker
         from app.pipeline.classifier import LLM
         from app.pipeline.delivery import Delivery, MessageRateLimiter
 
+        company_service = Companies(database, settings)
         llm = LLM(settings)
         bot = Bot(settings.bot_token.get_secret_value())
         bot.session.middleware(MessageRateLimiter(settings, database=database))
 
         async def polling() -> None:
-            dispatcher = Dispatcher(reader_hub=hub, llm=llm)
+            dispatcher = Dispatcher(reader_hub=hub, llm=llm, company_service=company_service)
             dispatcher.include_router(create_router(database, settings))
             try:
                 await dispatcher.start_polling(bot, handle_signals=False, close_bot_session=False)
@@ -119,9 +121,7 @@ async def _run(settings: Settings, with_reader: bool) -> None:
                 services["growth"] = Growth(database, settings, hub).loop
                 services["classifier"] = ClassificationWorker(database, settings, llm).loop
                 services["delivery"] = Delivery(database, settings, bot).loop
-                from app.companies.service import Companies
-
-                services["companies"] = Companies(database, settings).loop
+                services["companies"] = company_service.loop
             await run_services(services, settings, asyncio.Event())
             raise RuntimeError(texts.INTERFACE_STOPPED)
         finally:
@@ -131,7 +131,10 @@ async def _run(settings: Settings, with_reader: bool) -> None:
                 try:
                     await llm.close()
                 finally:
-                    await database.close()
+                    try:
+                        await company_service.pages.close()
+                    finally:
+                        await database.close()
 
 
 async def run_interface(settings: Settings) -> None:

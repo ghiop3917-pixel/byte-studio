@@ -108,8 +108,9 @@ class PublicPages:
         self.owned = client is None
         self.renderer = renderer
         self.robots = {}
-        self.lock = asyncio.Lock()
-        self.last = 0.0
+        self.locks: dict[str, asyncio.Lock] = {}
+        self.last: dict[str, float] = {}
+        self.render_lock = asyncio.Lock()
 
     def validate(self, provider: str, url: str) -> None:
         try:
@@ -135,9 +136,12 @@ class PublicPages:
                 follow_redirects=False,
                 headers={"User-Agent": AGENT},
             )
-        async with self.lock:
-            await asyncio.sleep(max(0, self.settings.company_request_interval_seconds - (time.monotonic() - self.last)))
-            self.last = time.monotonic()
+        host = urlsplit(url).hostname
+        async with self.locks.setdefault(host, asyncio.Lock()):
+            await asyncio.sleep(
+                max(0, self.settings.company_request_interval_seconds - (time.monotonic() - self.last.get(host, 0)))
+            )
+            self.last[host] = time.monotonic()
             async with self.client.stream(
                 "GET", url, follow_redirects=False, timeout=self.settings.company_timeout_seconds
             ) as r:
@@ -194,6 +198,10 @@ class PublicPages:
         raise PageUnavailable("redirect_limit")
 
     async def render(self, provider: str, url: str) -> str:
+        async with self.render_lock:
+            return await self._render(provider, url)
+
+    async def _render(self, provider: str, url: str) -> str:
         self.validate(provider, url)
         if not self.settings.company_render_enabled:
             raise PageUnavailable("browser_required")

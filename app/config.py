@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     company_chrome_path: str = Field(default="", validation_alias=AliasChoices("CHROME_PATH", "COMPANY_CHROME_PATH"))
     company_cities: tuple[str, ...] = ("Москва", "Ярославль")
     company_queries: tuple[str, ...] = ("авто из Китая", "привоз автомобилей из Китая", "импорт автомобилей из Китая")
-    company_request_interval_seconds: float = Field(default=5, ge=2)
+    company_request_interval_seconds: float = Field(default=2, ge=2)
     company_timeout_seconds: float = Field(default=30, gt=0)
     company_max_page_bytes: int = Field(default=4000000, ge=10000, le=10000000)
     company_max_pages: int = Field(default=2, ge=1, le=10)
@@ -104,6 +104,8 @@ class Settings(BaseSettings):
     company_poll_seconds: float = Field(default=5, gt=0)
     company_page_size: int = Field(default=5, ge=1, le=5)
     company_browser_budget_ms: int = Field(default=7000, ge=1000, le=20000)
+    company_first_results_wait_seconds: float = Field(default=10, ge=0, le=30)
+    company_cache_seconds: int = Field(default=900, ge=0)
     company_import_limit: int = Field(default=1000, ge=1, le=10000)
 
     reader_flood_padding_seconds: float = Field(default=1, ge=0)
@@ -184,9 +186,9 @@ class Settings(BaseSettings):
     @field_validator("company_cities")
     @classmethod
     def validate_company_cities(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value or any(city not in {"Москва", "Ярославль"} for city in value):
-            raise ValueError("Города сбора компаний: Москва и Ярославль.")
-        return tuple(dict.fromkeys(value))
+        if not value or any(not city.strip() or len(city) > 64 for city in value):
+            raise ValueError("Укажите название города длиной до 64 символов.")
+        return tuple(dict.fromkeys(city.strip() for city in value))
 
     @field_validator("company_queries")
     @classmethod

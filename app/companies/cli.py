@@ -7,34 +7,34 @@ from dataclasses import asdict
 from pathlib import Path
 
 from app.companies.fetch import PageUnavailable, PublicPages
-from app.companies.parsers import CITY, PROVIDERS, parse_page, search_url
+from app.companies.parsers import PROVIDERS, parse_page, search_url
 from app.companies.service import csv_bytes, prospect
 from app.config import get_settings
 
 
-async def collect(settings, provider: str, city: str, limit: int):
+async def collect(settings, provider: str, city: str, limit: int, niche: str | None = None):
     pages = PublicPages(settings)
     companies = {}
     issues = []
     try:
-        for query in settings.company_queries:
+        for query in (niche,) if niche else settings.company_queries:
             url = search_url(provider, city, query)
             try:
                 html = await pages.fetch(provider, url)
-                _, links = await asyncio.to_thread(parse_page, provider, city, url, html)
+                _, links = await asyncio.to_thread(parse_page, provider, city, url, html, niche=niche)
                 if provider == "google" and not links:
                     html = await pages.render(provider, url)
-                    _, links = await asyncio.to_thread(parse_page, provider, city, url, html)
+                    _, links = await asyncio.to_thread(parse_page, provider, city, url, html, niche=niche)
                 for link in links[:limit]:
                     if len(companies) >= limit:
                         break
                     if link in companies:
                         continue
                     detail = await pages.fetch(provider, link)
-                    records, _ = await asyncio.to_thread(parse_page, provider, city, link, detail)
+                    records, _ = await asyncio.to_thread(parse_page, provider, city, link, detail, niche=niche)
                     if not records and provider != "2gis":
                         detail = await pages.render(provider, link)
-                        records, _ = await asyncio.to_thread(parse_page, provider, city, link, detail)
+                        records, _ = await asyncio.to_thread(parse_page, provider, city, link, detail, niche=niche)
                     for record in records:
                         companies[link] = record
                 if len(companies) >= limit:
@@ -51,7 +51,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Публичные компании, явное чтение, без рабочей БД")
     parser.add_argument("--live", action="store_true", help="Разрешить ограниченные GET к публичным картам")
     parser.add_argument("--provider", choices=PROVIDERS, default="2gis")
-    parser.add_argument("--city", choices=CITY, default="Москва")
+    parser.add_argument("--city", default="Москва")
+    parser.add_argument("--niche", help="Любая сфера, например стоматологии")
     parser.add_argument("--limit", type=int, default=10)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -63,7 +64,7 @@ def main(argv=None):
         parser.error("Лимит должен быть от 1 до COMPANY_CARDS_PER_QUERY.")
     if args.output and args.output.exists():
         parser.error("Файл уже существует. Укажите новый путь: перезаписи не будет.")
-    records, issues = asyncio.run(collect(settings, args.provider, args.city, args.limit))
+    records, issues = asyncio.run(collect(settings, args.provider, args.city, args.limit, args.niche))
     selected = [record for record in records if prospect(record)]
     if args.output:
         rows = [

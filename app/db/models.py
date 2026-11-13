@@ -341,10 +341,13 @@ class LeadDraft(Base):
 
 class CompanyScan(Base):
     __tablename__ = "lh_company_scans"
-    __table_args__ = (UniqueConstraint("provider", "city"),)
+    __table_args__ = (UniqueConstraint("provider", "city", "niche", "requested_by"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     provider: Mapped[str] = mapped_column(String(16))
     city: Mapped[str] = mapped_column(String(64))
+    niche: Mapped[str] = mapped_column(String(100), default="")
+    queries: Mapped[str] = mapped_column(Text, default="[]")
+    requested_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
     requested_by: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
     query_index: Mapped[int] = mapped_column(Integer, default=0)
@@ -391,3 +394,13 @@ class CompanySnapshot(Base):
     fingerprint: Mapped[str] = mapped_column(String(64))
     payload: Mapped[str] = mapped_column(Text)
     captured_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class CompanySearchResult(Base):
+    __tablename__ = "lh_company_search_results"
+    __table_args__ = (UniqueConstraint("scan_id", "record_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scan_id: Mapped[int] = mapped_column(ForeignKey("lh_company_scans.id"), index=True)
+    record_id: Mapped[int] = mapped_column(ForeignKey("lh_company_records.id"), index=True)
+    matched: Mapped[bool] = mapped_column(Boolean, default=False)
+    seen_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)

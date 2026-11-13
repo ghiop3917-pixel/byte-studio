@@ -77,5 +77,7 @@ def create_router(database: Database, settings: Settings) -> Router:
     router.callback_query.register(leads.action, LeadActionData.filter())
     router.message.register(companies.command, Command("companies", "companies_scan"))
     router.callback_query.register(companies.callback, CompanyData.filter())
+    router.message.register(companies.city_input, companies.CompanySearch.city)
+    router.message.register(companies.niche_input, companies.CompanySearch.niche)
     router.message.register(menu.save_geo, menu.GeoInput.value)
     return router

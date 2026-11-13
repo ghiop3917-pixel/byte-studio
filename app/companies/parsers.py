@@ -30,6 +30,109 @@ SOCIAL = {
 LITERAL = re.compile(r'JSON\.parse\(\s*(\'(?:\\.|[^\'\\])*\'|"(?:\\.|[^"\\])*")\s*\)')
 
 
+CITY_ALIASES = {
+    "санкт-петербург": "spb",
+    "санкт петербург": "spb",
+    "нижний новгород": "n_novgorod",
+    "ростов-на-дону": "rostov",
+    "набережные челны": "nabchelny",
+    "улан-удэ": "ulanude",
+}
+CYRILLIC = dict(
+    zip(
+        "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+        (
+            "a",
+            "b",
+            "v",
+            "g",
+            "d",
+            "e",
+            "e",
+            "zh",
+            "z",
+            "i",
+            "y",
+            "k",
+            "l",
+            "m",
+            "n",
+            "o",
+            "p",
+            "r",
+            "s",
+            "t",
+            "u",
+            "f",
+            "h",
+            "c",
+            "ch",
+            "sh",
+            "sch",
+            "",
+            "y",
+            "",
+            "e",
+            "yu",
+            "ya",
+        ),
+        strict=True,
+    )
+)
+
+
+def search_value(value: str, limit: int) -> str:
+    value = " ".join(value.strip().split())
+    if (
+        not value
+        or len(value) > limit
+        or not any(char.isalpha() for char in value)
+        or "://" in value
+        or any(char in value for char in "<>\x00")
+    ):
+        raise ValueError("invalid_search_value")
+    return value
+
+
+def city_slug(city: str) -> str:
+    for known, values in CITY.items():
+        if known.casefold() == city.casefold():
+            return values[0]
+    key = city.casefold()
+    if key in CITY_ALIASES:
+        return CITY_ALIASES[key]
+    transliterated = "".join(CYRILLIC.get(char, char) for char in key)
+    return re.sub(r"[^a-z0-9]+", "_", transliterated).strip("_")
+
+
+def niche_matches(niche: str, text: str) -> bool:
+    value = text.casefold()
+    # Сохраняем точность ранее запрошенной специализации, но не делаем её глобальным фильтром.
+    if re.search(r"кита[яйею]|china", niche.casefold()) and re.search(r"авто|машин|car", niche.casefold()):
+        return bool(
+            re.search(r"кита[яйею]|china", value)
+            and re.search(r"авто|машин|car|automob", value)
+            and re.search(r"привоз|достав|импорт|пригон|из\s+кита|под\s+заказ|import|from\s+china", value)
+        )
+    ignored = {"в", "и", "из", "на", "по", "для", "с", "под", "компании", "компания", "услуги", "услуга"}
+    words = [word for word in re.findall(r"[а-яёa-z0-9]+", niche.casefold()) if word not in ignored]
+    roots = [
+        word[:6] if len(word) > 6 else re.sub(r"(?:ами|ями|ов|ев|ей|ы|и|а|я)$", "", word) if len(word) > 4 else word
+        for word in words
+    ]
+    if len(roots) > 1:
+        roots = [
+            root for root in roots if root not in {"салон", "магази", "центр", "центры", "компан", "услуг", "агентс"}
+        ]
+    synonyms = {
+        "красот": ("красот", "парикмах", "маникюр", "косметолог"),
+        "кварти": ("квартир", "помещен"),
+        "стомат": ("стомат", "dental", "dentist"),
+        "цветоч": ("цвет", "флорист"),
+    }
+    return bool(roots) and all(any(variant in value for variant in synonyms.get(root, (root,))) for root in roots)
+
+
 @dataclass(frozen=True)
 class Company:
     provider: str
@@ -100,14 +203,17 @@ def contacts(urls):
 
 def city_matches(city: str, location: str) -> bool:
     text = location.casefold()
-    for term in CITY.get(city, (None, None, ()))[2]:
+    terms = CITY.get(city, (None, None, (city.casefold(),)))[2]
+    for term in terms:
         for match in re.finditer(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text):
             if not re.match(r"\s+(?:oblast|region|область)\b", text[match.end() :]):
                 return True
     return False
 
 
-def in_scope(city: str, location: str, description: str) -> bool:
+def in_scope(city: str, location: str, description: str, niche: str | None = None) -> bool:
+    if niche is not None:
+        return city_matches(city, location) and niche_matches(niche, description)
     city_ok = city_matches(city, location)
     text = description.casefold()
     return bool(
@@ -119,11 +225,13 @@ def in_scope(city: str, location: str, description: str) -> bool:
 
 
 def search_url(provider: str, city: str, query: str, page: int = 1) -> str:
-    slug, region, _ = CITY[city]
+    city = search_value(city, 64)
+    query = search_value(query, 100)
+    slug = city_slug(city)
     if provider == "2gis":
         return f"https://2gis.ru/{slug}/search/{quote(query, safe='')}" + (f"/page/{page}" if page > 1 else "")
     if provider == "yandex":
-        return f"https://yandex.ru/maps/{region}/{slug}/search/{quote(query, safe='')}/"
+        return "https://yandex.ru/maps/?text=" + quote(city + " " + query, safe="")
     if provider == "google":
         return "https://www.google.com/maps/search/" + quote(query + " " + city, safe="") + "/?hl=ru"
     raise ValueError("unknown_provider")
@@ -149,7 +257,7 @@ def canonical(provider: str, value: str, base: str) -> tuple[str, str] | None:
     if provider == "2gis":
         if re.fullmatch(r"/firm/\d+", p.path):
             slug = urlsplit(base).path.strip("/").split("/")[0]
-            if slug in {value[0] for value in CITY.values()}:
+            if re.fullmatch(r"[a-z0-9_-]{1,80}", slug):
                 p = p._replace(path="/" + slug + p.path)
         match = re.fullmatch(r"/([a-z_]+)/firm/(\d+)(?:/[^?#]*)?", p.path)
         if not match:
@@ -258,7 +366,7 @@ def walk(root):
             stack.extend((v, depth + 1) for v in item)
 
 
-def parse_2gis(item: dict, city: str, source_url: str) -> Company | None:
+def parse_2gis(item: dict, city: str, source_url: str, niche: str | None = None) -> Company | None:
     identity = str(item.get("id", ""))
     name = item.get("name")
     if not re.fullmatch(r"\d+", identity) or not isinstance(name, str) or "contact_groups" not in item:
@@ -316,11 +424,11 @@ def parse_2gis(item: dict, city: str, source_url: str) -> Company | None:
         mx,
         web,
         "listed" if web else "not_listed",
-        in_scope(city, location, name + " " + description),
+        in_scope(city, location, name + " " + description, niche),
     )
 
 
-def parse_yandex(item: dict, city: str, source_url: str) -> Company | None:
+def parse_yandex(item: dict, city: str, source_url: str, niche: str | None = None) -> Company | None:
     meta = item.get("CompanyMetaData")
     if not isinstance(meta, dict) or not meta.get("id") or not meta.get("name"):
         return None
@@ -357,11 +465,11 @@ def parse_yandex(item: dict, city: str, source_url: str) -> Company | None:
         mx,
         web,
         "listed" if web else "not_listed",
-        in_scope(city, address, str(meta["name"]) + " " + description),
+        in_scope(city, address, str(meta["name"]) + " " + description, niche),
     )
 
 
-def parse_google(page: Page, city: str, url: str) -> Company | None:
+def parse_google(page: Page, city: str, url: str, niche: str | None = None) -> Company | None:
     identity = canonical("google", url, url)
     name = " ".join(page.title).strip()
     if not identity or not name or not {"phone", "address"} <= page.profile_markers:
@@ -391,16 +499,18 @@ def parse_google(page: Page, city: str, url: str) -> Company | None:
         mx,
         web,
         "listed" if web else "not_listed",
-        in_scope(city, page.address, name + " " + (page.description or page.meta_description)),
+        in_scope(city, page.address, name + " " + (page.description or page.meta_description), niche),
     )
 
 
-def parse_page(provider: str, city: str, url: str, html: str) -> tuple[tuple[Company, ...], tuple[str, ...]]:
+def parse_page(
+    provider: str, city: str, url: str, html: str, *, niche: str | None = None
+) -> tuple[tuple[Company, ...], tuple[str, ...]]:
     page = Page()
     page.feed(html)
     found = {}
     if provider == "google":
-        item = parse_google(page, city, url)
+        item = parse_google(page, city, url, niche)
         if item:
             found[item.external_id] = item
     for root in json_roots(page):
@@ -408,9 +518,9 @@ def parse_page(provider: str, city: str, url: str, html: str) -> tuple[tuple[Com
             if not isinstance(item, dict):
                 continue
             company = (
-                parse_2gis(item, city, url)
+                parse_2gis(item, city, url, niche)
                 if provider == "2gis"
-                else parse_yandex(item, city, url)
+                else parse_yandex(item, city, url, niche)
                 if provider == "yandex"
                 else None
             )
@@ -420,7 +530,7 @@ def parse_page(provider: str, city: str, url: str, html: str) -> tuple[tuple[Com
                 and re.fullmatch(r"\d{10,}", str(item.get("id", "")))
             ):
                 slug = item.get("city_alias")
-                if slug == CITY[city][0]:
+                if slug == city_slug(city):
                     page.links.append(f"https://2gis.ru/{slug}/firm/{item['id']}")
             elif provider == "yandex" and isinstance(item.get("CompanyMetaData"), dict):
                 identity = str(item["CompanyMetaData"].get("id", ""))

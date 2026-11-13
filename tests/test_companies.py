@@ -1,5 +1,6 @@
 """Компании: вымышленные публичные карточки, MockTransport, без сети/рабочей SQLite."""
 
+import asyncio
 import json
 import tempfile
 import unittest
@@ -23,7 +24,7 @@ from app.bot.keyboards import CompanyData, keyboard
 from app.bot.router import create_router
 from app.companies.cli import main
 from app.companies.fetch import PageUnavailable, PublicPages, blocked, find_browser, robots_allowed
-from app.companies.parsers import canonical, contacts, parse_page, phone, search_url
+from app.companies.parsers import canonical, city_slug, contacts, niche_matches, parse_page, phone, search_url
 from app.companies.service import Companies, csv_bytes, prospect
 from app.config import Settings
 from app.db.models import CompanyRecord, CompanyScan, CompanySnapshot, Lead, User, utc_now
@@ -188,6 +189,32 @@ class ParserTests(unittest.TestCase):
             cfg = Settings(_env_file=None, CHROME_PATH=str(path))
             self.assertEqual(find_browser(cfg.company_chrome_path), str(path))
 
+    def test_arbitrary_cities_and_niches_are_not_a_whitelist(self):
+        self.assertEqual(city_slug("Казань"), "kazan")
+        self.assertEqual(city_slug("москва"), "moscow")
+        self.assertEqual(city_slug("Санкт-Петербург"), "spb")
+        self.assertIn("/kazan/search/", search_url("2gis", "Казань", "стоматологии"))
+        self.assertIn("text=", search_url("yandex", "Тверь", "цветочные магазины"))
+        for niche, text in (
+            ("стоматологии", "Стоматологическая клиника"),
+            ("ремонт телефонов", "Ремонт мобильных телефонов"),
+            ("салоны красоты", "Парикмахерская"),
+            ("магазины цветов", "Цветы"),
+        ):
+            self.assertTrue(niche_matches(niche, text), (niche, text))
+        self.assertFalse(niche_matches("стоматологии", "Автосервис"))
+        source = firm(
+            name="Тестовая клиника",
+            name_ex={"extension": "Стоматологическая клиника"},
+            city_alias="kazan",
+            adm_div=[{"type": "city", "name": "Казань"}],
+        )
+        rows, _ = parse_page("2gis", "Казань", "https://2gis.ru/kazan/firm/" + FIRM, html(source), niche="стоматологии")
+        self.assertTrue(prospect(rows[0]))
+        self.assertEqual(
+            Settings(_env_file=None, company_cities=["Казань", "Тверь"]).company_cities, ("Казань", "Тверь")
+        )
+
     def test_safe_json_and_phone(self):
         self.assertEqual(phone("8 (916) 000-00-00"), "+79160000000")
         self.assertIsNone(phone("показать телефон"))
@@ -284,6 +311,23 @@ class FetchTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await pages.fetch("2gis", URL)
             self.assertGreater(error.exception.retry_after, 170)
+
+    async def test_independent_hosts_can_fetch_in_parallel(self):
+        entered = set()
+        both = asyncio.Event()
+
+        async def response(request):
+            entered.add(request.url.host)
+            if len(entered) == 2:
+                both.set()
+            await asyncio.wait_for(both.wait(), 1)
+            return httpx.Response(200, text="ok")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
+            pages = PublicPages(self.cfg(), client)
+            with patch("app.companies.fetch.asyncio.sleep", new=AsyncMock()):
+                await asyncio.gather(pages._get("2gis", URL), pages._get("yandex", "https://yandex.ru/maps/"))
+            self.assertEqual(set(pages.last), {"2gis.ru", "yandex.ru"})
 
     async def test_browser_opt_in_and_no_captcha_bypass(self):
         renderer = AsyncMock(return_value="<title>CAPTCHA</title>")
@@ -435,6 +479,87 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<Тест>", text)
         self.assertIn("&lt;", text)
 
+    async def test_different_niches_and_owners_have_separate_jobs(self):
+        self.assertEqual(await self.companies.enqueue(9, "Казань", "стоматологии"), 3)
+        self.assertEqual(await self.companies.enqueue(9, "Казань", "автосервисы"), 3)
+        self.assertEqual(await self.companies.enqueue(9, "Тверь", "цветы"), 3)
+        jobs = await self.rows(CompanyScan)
+        self.assertEqual(len(jobs), 9)
+        self.assertEqual({row.niche for row in jobs}, {"стоматологии", "автосервисы", "цветы"})
+        self.assertEqual(json.loads(jobs[0].queries), ["стоматологии"])
+        self.assertTrue(self.companies.wakeup.is_set())
+
+    async def test_results_do_not_mix_between_city_and_niche(self):
+        await self.companies.enqueue(9, "Казань", "стоматологии")
+        await self.companies.enqueue(9, "Казань", "автосервисы")
+        jobs = await self.rows(CompanyScan)
+        doctor = replace(company(), name="Клиника", description="Стоматологическая клиника", city="Казань")
+        auto = replace(
+            company(),
+            external_id="other",
+            name="Гараж",
+            description="Автосервис",
+            city="Казань",
+            phones=("+79161111111",),
+        )
+        await self.companies.save(doctor, jobs[0].id)
+        await self.companies.save(auto, jobs[3].id)
+        self.assertEqual(
+            [row["name"] for row in await self.companies.records(9, city="Казань", niche="стоматологии")], ["Клиника"]
+        )
+        self.assertEqual(
+            [row["name"] for row in await self.companies.records(9, city="Казань", niche="автосервисы")], ["Гараж"]
+        )
+        self.assertEqual(await self.companies.records(9, city="Тверь", niche="стоматологии"), ())
+
+    async def test_fresh_search_cache_and_explicit_refresh(self):
+        await self.companies.enqueue(9, "Казань", "стоматологии")
+        async with self.db.session() as session:
+            for row in (await session.scalars(select(CompanyScan))).all():
+                row.status = "completed"
+        self.assertEqual(await self.companies.enqueue(9, "Казань", "стоматологии"), 0)
+        self.assertEqual(await self.companies.enqueue(9, "Казань", "стоматологии", refresh=True), 3)
+        recent = await self.companies.recent(9)
+        self.assertEqual(len(recent), 1)
+        self.assertEqual(await self.companies.scope(9, recent[0]["id"]), ("Казань", "стоматологии"))
+        with self.assertRaises(AccountError):
+            await self.companies.scope(10, recent[0]["id"])
+
+    async def test_first_results_wait_is_signalled_not_database_polling(self):
+        await self.companies.enqueue(9, "Казань", "стоматологии")
+        job = (await self.rows(CompanyScan))[0]
+        self.companies.running = True
+        task = asyncio.create_task(self.companies.wait_for_results(9, "Казань", "стоматологии", 1))
+        await asyncio.sleep(0.01)
+        await self.companies.save(
+            replace(company(), name="Клиника", description="Стоматологическая клиника", city="Казань"), job.id
+        )
+        rows = await task
+        self.assertEqual(rows[0]["name"], "Клиника")
+        self.companies.running = False
+
+    async def test_loop_runs_providers_concurrently_and_stops(self):
+        entered = set()
+        ready = asyncio.Event()
+
+        async def step(provider):
+            entered.add(provider)
+            if len(entered) == 3:
+                ready.set()
+            await ready.wait()
+            return False
+
+        self.companies.step = step
+        task = asyncio.create_task(self.companies.loop())
+        try:
+            await asyncio.wait_for(ready.wait(), 1)
+            self.assertTrue(self.companies.running)
+        finally:
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        self.assertFalse(self.companies.running)
+
     async def test_actual_dispatcher_owner_buttons_and_export(self):
         calls = []
 
@@ -488,6 +613,21 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(any(isinstance(call, SendMessage) for call in calls))
             await callback("home")
             await callback("scan")
+
+            async def typed(text):
+                message = Message(
+                    message_id=len(calls) + 1,
+                    date=utc_now(),
+                    chat=Chat(id=9, type="private"),
+                    from_user=BotUser(id=9, is_bot=False, first_name="Тест"),
+                    text=text,
+                )
+                await dp.feed_update(bot, Update(update_id=len(calls) + 1, message=message))
+
+            await typed("Москва")
+            await typed("авто из Китая")
+            job = (await self.rows(CompanyScan))[0]
+            await self.companies.save(company(), job.id)
             await callback("list")
             await callback("export")
             self.assertTrue(any(isinstance(call, SendDocument) for call in calls))
