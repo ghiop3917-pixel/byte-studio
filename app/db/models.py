@@ -337,3 +337,57 @@ class LeadDraft(Base):
     due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class CompanyScan(Base):
+    __tablename__ = "lh_company_scans"
+    __table_args__ = (UniqueConstraint("provider", "city"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    city: Mapped[str] = mapped_column(String(64))
+    requested_by: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    query_index: Mapped[int] = mapped_column(Integer, default=0)
+    page: Mapped[int] = mapped_column(Integer, default=1)
+    links: Mapped[str] = mapped_column(Text, default="[]")
+    seen: Mapped[str] = mapped_column(Text, default="[]")
+    skipped: Mapped[int] = mapped_column(Integer, default=0)
+    issues: Mapped[str] = mapped_column(Text, default="[]")
+    link_index: Mapped[int] = mapped_column(Integer, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    due_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now, index=True)
+    error: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class CompanyRecord(Base):
+    __tablename__ = "lh_company_records"
+    __table_args__ = (UniqueConstraint("provider", "external_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider: Mapped[str] = mapped_column(String(16))
+    external_id: Mapped[str] = mapped_column(String(255))
+    source_url: Mapped[str] = mapped_column(Text)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    city: Mapped[str] = mapped_column(String(64), index=True)
+    address: Mapped[str] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(String(32), index=True)
+    phones: Mapped[str] = mapped_column(Text)
+    telegram: Mapped[str] = mapped_column(Text)
+    max_links: Mapped[str] = mapped_column(Text)
+    websites: Mapped[str] = mapped_column(Text)
+    website_state: Mapped[str] = mapped_column(String(16), index=True)
+    in_scope: Mapped[bool] = mapped_column(Boolean, default=False)
+    possible_duplicate_of: Mapped[int | None] = mapped_column(ForeignKey("lh_company_records.id"))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    identity_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    checked_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+
+class CompanySnapshot(Base):
+    __tablename__ = "lh_company_snapshots"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    record_id: Mapped[int] = mapped_column(ForeignKey("lh_company_records.id"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    payload: Mapped[str] = mapped_column(Text)
+    captured_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)

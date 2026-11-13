@@ -90,6 +90,22 @@ class Settings(BaseSettings):
     draft_max_length: int = Field(default=1200, ge=100, le=3000)
     draft_lease_seconds: float = Field(default=120, gt=0)
 
+    company_monitor_enabled: bool = False
+    company_render_enabled: bool = False
+    company_chrome_path: str = Field(default="", validation_alias=AliasChoices("CHROME_PATH", "COMPANY_CHROME_PATH"))
+    company_cities: tuple[str, ...] = ("Москва", "Ярославль")
+    company_queries: tuple[str, ...] = ("авто из Китая", "привоз автомобилей из Китая", "импорт автомобилей из Китая")
+    company_request_interval_seconds: float = Field(default=5, ge=2)
+    company_timeout_seconds: float = Field(default=30, gt=0)
+    company_max_page_bytes: int = Field(default=4000000, ge=10000, le=10000000)
+    company_max_pages: int = Field(default=2, ge=1, le=10)
+    company_cards_per_query: int = Field(default=20, ge=1, le=100)
+    company_max_attempts: int = Field(default=3, ge=1, le=5)
+    company_poll_seconds: float = Field(default=5, gt=0)
+    company_page_size: int = Field(default=5, ge=1, le=5)
+    company_browser_budget_ms: int = Field(default=7000, ge=1000, le=20000)
+    company_import_limit: int = Field(default=1000, ge=1, le=10000)
+
     reader_flood_padding_seconds: float = Field(default=1, ge=0)
     reader_refresh_seconds: float = Field(default=60, gt=0)
     reader_poll_seconds: float = Field(default=1, gt=0)
@@ -164,6 +180,20 @@ class Settings(BaseSettings):
     lead_excerpt_length: int = Field(default=300, ge=1)
     summary_max_length: int = Field(default=120, ge=1)
     subscription_reminder_hours: int = Field(default=24, ge=1)
+
+    @field_validator("company_cities")
+    @classmethod
+    def validate_company_cities(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value or any(city not in {"Москва", "Ярославль"} for city in value):
+            raise ValueError("Города сбора компаний: Москва и Ярославль.")
+        return tuple(dict.fromkeys(value))
+
+    @field_validator("company_queries")
+    @classmethod
+    def validate_company_queries(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value or len(value) > 10 or any(not query.strip() or len(query) > 100 for query in value):
+            raise ValueError("Нужно 1–10 поисковых запросов длиной до 100 символов.")
+        return tuple(dict.fromkeys(query.strip() for query in value))
 
     @field_validator("discovery_queries")
     @classmethod

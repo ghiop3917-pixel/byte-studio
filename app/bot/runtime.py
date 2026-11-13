@@ -119,6 +119,9 @@ async def _run(settings: Settings, with_reader: bool) -> None:
                 services["growth"] = Growth(database, settings, hub).loop
                 services["classifier"] = ClassificationWorker(database, settings, llm).loop
                 services["delivery"] = Delivery(database, settings, bot).loop
+                from app.companies.service import Companies
+
+                services["companies"] = Companies(database, settings).loop
             await run_services(services, settings, asyncio.Event())
             raise RuntimeError(texts.INTERFACE_STOPPED)
         finally:

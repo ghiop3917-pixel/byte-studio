@@ -66,6 +66,10 @@ def keyboard(page: str, view: AccountView, settings: Settings) -> InlineKeyboard
                 ("stats", texts.BTN_STATS),
             )
         ]
+    if page in {"home", "welcome"} and view.tg_id in settings.admin_ids:
+        rows.append(
+            [InlineKeyboardButton(text=texts.BTN_COMPANIES, callback_data=CompanyData(action="home", after=0).pack())]
+        )
     rows.append(home_button())
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -82,3 +86,8 @@ class CandidatesPageData(CallbackData, prefix="candidates"):
 class LeadActionData(CallbackData, prefix="lead"):
     lead_id: int
     action: str
+
+
+class CompanyData(CallbackData, prefix="company"):
+    action: str
+    after: int

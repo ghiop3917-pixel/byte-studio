@@ -10,11 +10,12 @@ from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from app.bot import texts
 from app.bot.accounts import AccountError, Accounts
-from app.bot.handlers import admin, discovery, leads, menu, start
+from app.bot.handlers import admin, companies, discovery, leads, menu, start
 from app.bot.keyboards import (
     CandidateData,
     CandidatesPageData,
     CategoryData,
+    CompanyData,
     GeoData,
     LeadActionData,
     PageData,
@@ -74,5 +75,7 @@ def create_router(database: Database, settings: Settings) -> Router:
     router.callback_query.register(discovery.decision, CandidateData.filter())
     router.callback_query.register(discovery.page, CandidatesPageData.filter())
     router.callback_query.register(leads.action, LeadActionData.filter())
+    router.message.register(companies.command, Command("companies", "companies_scan"))
+    router.callback_query.register(companies.callback, CompanyData.filter())
     router.message.register(menu.save_geo, menu.GeoInput.value)
     return router

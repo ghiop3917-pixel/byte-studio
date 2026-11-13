@@ -152,3 +152,56 @@ DRAFT_FAILED = "Черновик не готов. Ошибка сохранен�
 DRAFT_GENERATING = "Готовлю черновик. Заказчику ничего не отправляется."
 DRAFT_RESULT = "Черновик — не отправлен заказчику:\n\n{text}"
 FEEDBACK_SAVED = "Отметка сохранена."
+
+
+BTN_COMPANIES = "🏢 Компании без сайта"
+COMPANY_SCAN_BUTTON = "🔎 Найти компании"
+COMPANY_LIST_BUTTON = "📋 Показать компании"
+COMPANY_EXPORT_BUTTON = "📄 Скачать CSV"
+COMPANY_SOURCE_BUTTON = "Карточка на карте"
+COMPANY_MORE = "Следующая страница:"
+COMPANIES_NOT_SCANNED = "Поиск ещё не запускался."
+COMPANY_NOT_LISTED = "не указано"
+COMPANIES_BAD_SCOPE = "Поддерживаются Москва и Ярославль."
+COMPANIES_HOME = (
+    "<b>Компании с неуказанным сайтом</b>\nМосква и Ярославль · привоз авто из Китая.\n"
+    "Это потенциальные клиенты, не входящие заказы. Ничего им автоматически не отправляется.\n"
+    "Сайт не указан в проверенной карточке — это не доказательство отсутствия сайта вообще.\n"
+    "Сбор включён: {enabled}\n\n{status}"
+)
+COMPANY_SCAN_LINE = "{provider} · {city}: {status} · {error} · пропущено: {skipped}"
+COMPANIES_QUEUED = (
+    "Поиск поставлен в очередь. Он начнётся только при COMPANY_MONITOR_ENABLED=true "
+    "и готовой схеме. Блокировки/капчи не обходятся."
+)
+COMPANIES_EMPTY = "Проверенных компаний без указанного сайта пока нет. Проверьте состояние поиска: /companies."
+COMPANY_CARD = (
+    "<b>#{id} · {name}</b>\n{description}\n📍 {city} · {address}\n"
+    "☎ {phones}\nTelegram: {telegram}\nMAX: {max_links}\n"
+    "Сайт: не указан в карточке.\nПроверено: {checked_at}\nПохожие карточки: {duplicates}"
+)
+COMPANY_EXPORT_NOTE = (
+    "Публичные контакты. Сайт не указан в карточке; не подтверждено его отсутствие вообще. Автоотправки нет."
+)
+
+COMPANY_STATUS_LABELS = {
+    "pending": "ожидает",
+    "processing": "собирает",
+    "retry_wait": "ожидает повтора",
+    "completed": "проверка завершена",
+    "paused": "приостановлен",
+    "failed": "ошибка",
+}
+COMPANY_ERROR_LABELS = {
+    "access_blocked": "источник ограничил доступ",
+    "captcha_or_consent": "нужна ручная проверка на сайте",
+    "robots_disallowed": "автосбор этой страницы запрещён",
+    "browser_required": "нужен браузерный режим",
+    "browser_not_found": "браузер не найден",
+    "page_schema_unknown": "формат страницы не распознан",
+    "contact_data_unavailable": "контакты недоступны",
+    "http_429": "источник попросил подождать",
+    "owner_revoked": "нет прав владельца",
+}
+COMPANIES_QUEUED_DISABLED = "Задание сохранено. Сбор пока выключен: реальные запросы не выполняются."
+COMPANIES_QUEUED_ACTIVE = "Поиск поставлен в очередь. Результаты и состояние — в этом разделе."

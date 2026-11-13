@@ -419,3 +419,43 @@ RawMessage.status=lead тоже участвует в поиске кроссп�
 не перезаписывает сохранённую карточку и не создаёт повторную outbox.
 Старые публичные контракты сохранены; тест состава сервисов обновлён на шесть
 задач, прежние проверки интерфейса и очистки ресурсов сохранены.
+
+
+## Компании из карт — отдельный согласованный модуль
+
+- companies.parsers.Company(provider, external_id, source_url, name, description,
+  city, address, phones, telegram, max_links, websites, website_state, in_scope):
+  payload() -> str, fingerprint() -> str.
+- parse_page(provider, city, url, html) -> tuple[tuple[Company,...],tuple[str,...]].
+  parse_2gis(item,city,source_url), parse_yandex(item,city,source_url),
+  parse_google(page,city,url). Только известные формы; неполные контакты не означают «нет сайта».
+- phone(value), public_url(value), contacts(urls), city_matches(city,location),
+  in_scope(city,location,description), search_url(provider,city,query,page=1),
+  canonical(provider,value,base). Москва и Ярославль; Google/Yandex — по адресу,
+  2ГИС — по городу в карточке, не по одному региональному алиасу выдачи.
+- companies.fetch.PublicPages(settings,client=None,renderer=None):
+  fetch(provider,url), render(provider,url), close(). PageUnavailable(code,*,retry_after=0).
+- robots_allowed(text,url) -> bool; find_browser(explicit_path=None), blocked(html).
+- companies.service.Companies(database,settings,pages=None): enqueue(actor) -> int,
+  save(company) -> int | None, records(actor,after=0,*,limit=None), status(actor), step() -> bool, loop().
+- prospect(company), identity(company), csv_bytes(rows) -> bytes.
+- companies.cli.collect(settings,provider,city,limit); main(argv=None). Без --live нет сети.
+- CompanyData(action:str,after:int), префикс company; действия home/scan/list/export.
+- В --run добавлена седьмая coroutine companies. COMPANY_MONITOR_ENABLED=false
+  и COMPANY_RENDER_ENABLED=false по умолчанию. Задания только по запросу администратора.
+
+Объявлены, не применены к рабочей SQLite:
+
+- lh_company_scans: id PK, provider, city, UNIQUE(provider,city), requested_by,
+  status indexed, query_index, page, links JSON, seen JSON, skipped, issues JSON,
+  link_index, attempts, due_at indexed, error, updated_at.
+- lh_company_records: id PK, provider, external_id, UNIQUE(provider,external_id),
+  source_url, name, description, city indexed, address, phone indexed, phones JSON,
+  telegram JSON, max_links JSON, websites JSON, website_state indexed, in_scope,
+  possible_duplicate_of self FK, fingerprint, identity_key indexed, checked_at.
+- lh_company_snapshots: id PK, record_id FK/indexed, fingerprint, payload, captured_at.
+
+Книга компаний не создаёт lh_leads, lh_lead_deliveries или outbox. Исходящие
+действия — только ответы владельцу на команды и экспорт по запросу. Сырые HTML,
+состояние браузера, sessionId и cookies не сохраняются в снимках: только отобранные
+публичные бизнес-поля. История изменений компании сохраняется по fingerprint.
